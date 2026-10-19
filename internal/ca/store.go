@@ -347,8 +347,7 @@ func decryptPrivateKey(enc encryptedKey, passphrase string) ([]byte, error) {
 func writeJSONAtomic(path string, v any, mode os.FileMode) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil { return err }
-	data = append(data, '
-')
+	data = append(data, byte(10))
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".nls-tmp-*")
 	if err != nil { return err }
