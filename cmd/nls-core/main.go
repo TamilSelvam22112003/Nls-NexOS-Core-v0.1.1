@@ -131,7 +131,7 @@ func splitList(value string) []string {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `NLS Router-CA admin CLI
+	fmt.Fprint(os.Stderr, `NLS Router-CA admin CLI
 Usage:
   nls-core init [--dir DIR]
   nls-core set-enrollment-credentials --name NAME [--ttl 10m] [--dir DIR]
