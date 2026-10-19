@@ -310,12 +310,32 @@ func (s Store) rootCertificate(passphrase, dnsName string) ([]byte, ed25519.Priv
 }
 
 func (s Store) TLSCertificate(passphrase, dnsName string) (tls.Certificate, []byte, error) {
-	der,key,err:=s.rootCertificate(passphrase,dnsName);if err!=nil{return tls.Certificate{},nil,err}
-	keyDER,err:=x509.MarshalPKCS8PrivateKey(key);if err!=nil{return tls.Certificate{},nil,err}
-	certPEM:=pem.EncodeToMemory(&pem.Block{Type:"CERTIFICATE",Bytes:der})
-	keyPEM:=pem.EncodeToMemory(&pem.Block{Type:"PRIVATE KEY",Bytes:keyDER})
-	pair,err:=tls.X509KeyPair(certPEM,keyPEM);if err!=nil{return tls.Certificate{},nil,err}
-	return pair,certPEM,nil
+	rootDER, caKey, err := s.rootCertificate(passphrase, dnsName)
+	if err != nil { return tls.Certificate{}, nil, err }
+	root, err := x509.ParseCertificate(rootDER)
+	if err != nil { return tls.Certificate{}, nil, err }
+	serverPub, serverKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil { return tls.Certificate{}, nil, err }
+	serial, err := randomUint64()
+	if err != nil { return tls.Certificate{}, nil, err }
+	now := time.Now().UTC()
+	notAfter := now.AddDate(0, 1, 0)
+	if notAfter.After(root.NotAfter) { notAfter = root.NotAfter }
+	template := &x509.Certificate{
+		SerialNumber: new(big.Int).SetUint64(serial),
+		Subject: pkixName(dnsName),
+		NotBefore: now.Add(-time.Minute), NotAfter: notAfter,
+		KeyUsage: x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true, DNSNames: []string{dnsName},
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, template, root, serverPub, caKey)
+	if err != nil { return tls.Certificate{}, nil, err }
+	leaf, err := x509.ParseCertificate(leafDER)
+	if err != nil { return tls.Certificate{}, nil, err }
+	pair := tls.Certificate{Certificate: [][]byte{leafDER, rootDER}, PrivateKey: serverKey, Leaf: leaf}
+	rootPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})
+	return pair, rootPEM, nil
 }
 
 func signRDR(key ed25519.PrivateKey, body []byte) []byte {

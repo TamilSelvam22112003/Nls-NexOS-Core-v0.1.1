@@ -124,7 +124,8 @@ func TestControlSnapshotsEncodeConfiguredPolicy(t *testing.T) {
 
 func TestCACertificateIsPersistentAndTLS13Compatible(t *testing.T) {
 	s:=readyStore(t)
-	_,rootPEM,err:=s.TLSCertificate(testPassphrase,"ca.test.example");if err!=nil{t.Fatal(err)}
+	pair,rootPEM,err:=s.TLSCertificate(testPassphrase,"ca.test.example");if err!=nil{t.Fatal(err)}
+	if len(pair.Certificate)!=2||pair.Leaf==nil||pair.Leaf.IsCA{t.Fatal("TLS listener must use a CA-signed leaf certificate, not the CA key")}
 	if _,_,err=s.TLSCertificate(testPassphrase,"ca.test.example");err!=nil{t.Fatal(err)}
 	if _,_,err=s.TLSCertificate(testPassphrase,"other.test.example");err==nil{t.Fatal("hostname mismatch should fail closed")}
 	if _,err=os.Stat(filepath.Join(s.Dir,"ca-cert.pem"));err!=nil{t.Fatal(err)}
