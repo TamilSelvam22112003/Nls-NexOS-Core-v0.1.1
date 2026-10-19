@@ -1,20 +1,25 @@
-# Threat Model
+# NLS v0.1.1 Threat Model
+Status: aligned with frozen PROTOCOL.md, 2026-10-19.
 
-Assets: CA/router private keys, enrollment credentials, directory/policy/revocation integrity, session keys/sequence state, inner packet confidentiality/integrity and availability. Adversaries include passive WAN observers, on-path injectors/modifiers/replayers, spoofed-source M1 senders, compromised clients, malicious enrolled routers and temporary CA/network outages. Compromised endpoints see plaintext; CA compromise permits forged identities.
+## Assets
+Router Ed25519 private keys, CA signing key, enrollment tokens, TLS credentials, RDR integrity/freshness, policy and revocation state, ephemeral DH secrets, session keys, inner packets, replay windows, audit logs.
 
-**Hidden:** inner client/server IPs, transport ports/headers and payload (entire inner IP packet is AES-256-GCM ciphertext). **Visible:** outer router WAN IPv6 endpoints, UDP ports, packet sizes, timing, direction, rate and volume; traffic analysis remains possible.
+## Adversaries
+On-path/off-path attackers, spoofed-source UDP senders, malicious enrolled routers, compromised router hosts, stolen enrollment tokens, compromised CA/admin host, passive WAN observers, resource-exhaustion attackers.
 
-| Threat | Required mitigation | Residual risk |
-|---|---|---|
-| Replay | per-direction sequence, 1024-window; authenticate before advancing | implementation flaws |
-| Spoofed M1/DoS | stateless HMAC cookie before state; global/per-prefix limits; bounded datagrams | bandwidth/CPU DoS |
-| Downgrade | fixed suite 1; bind version/suite into transcript; reject unknown | future upgrades need explicit version |
-| Revoked router | fresh online lookup for each new handshake; ACTIVE required; teardown on sync | existing session until sync |
-| CA unreachable | fail closed for new handshakes; stale cache never authorizes; existing locally valid sessions may continue until revocation known | availability loss |
-| Router key compromise | revoke, rotate, terminate sessions, audit; keys 0600 in dirs 0700 | impersonation until revocation |
-| CA key compromise | offline encrypted backup, least privilege, audit and root rotation | full trust domain compromised |
-| Tampering | GCM authenticates header as AAD and ciphertext | drop/delay possible |
-| Unknown destination | protected prefixes fail closed; no plaintext fallback | misconfiguration outage |
-| Credential theft | scoped credentials, TLS, no logs, expiry/revocation | bootstrap remains critical |
+## Security properties
+NLS encrypts the complete inner IP packet: client/server IP addresses, transport ports and payload. It authenticates the packet with AES-256-GCM, provides per-direction keys and sequence-based replay protection, and authenticates router identities against signed RDRs. Enrollment tokens are single-use, expiring and bound to the CSR public-key hash. Control traffic uses TLS 1.3.
 
-Never log secrets, keys, cookies, or full inner packets. Log timestamp, router ID, event code and request ID.
+## Explicitly not hidden
+Outer router WAN IPv6 endpoints, UDP protocol use, packet sizes, timing, direction, approximate traffic volume and connection activity. Traffic analysis remains possible. The destination router must see the decrypted inner packet to forward it.
+
+## Threat handling
+- Replay: per-direction 1024-packet sliding window; update only after GCM authentication.
+- Spoofed M1/DoS: stateless address-bound cookie always required before allocating state; M1_COOKIE smaller than padded M1; rate limits still required.
+- Downgrade: only protocol version 1 and suite 1 accepted; unknown versions/suites rejected.
+- Revoked router: revocation push tears down sessions within 30s; new handshake requires online lookup; revoked peer immediately terminates rekey/session.
+- CA unreachable: fail closed for new handshakes; existing sessions dropped after control outage exceeds 300s.
+- Key compromise: compromised router key permits impersonation until revocation propagates; compromised CA key compromises issued identities. CA key encrypted at rest with Argon2id; offline backup/export encrypted. CA rotation and HA are out of scope.
+- Wrong tag/signature/transcript/cookie: silent UDP drop, tentative state and keys erased.
+- Unknown destination or missing PROTECT state: drop; never plaintext fallback.
+- Compromised router host: keys and decrypted traffic on that host are exposed; NLS cannot defend a fully compromised endpoint.
