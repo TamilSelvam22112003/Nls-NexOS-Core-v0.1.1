@@ -49,17 +49,18 @@ func TestTLVRoundTripAndUnknownNoncriticalSkip(t *testing.T) {
 func TestTLVRejectsInvalidCorpus(t *testing.T) {
 	known := map[uint16]struct{}{1: {}}
 	unknownCritical, _ := EncodeTLVs([]TLV{{Type: TLVCriticalBit | 9, Value: []byte("x")}})
-	unsorted, _ := EncodeTLVs([]TLV{{Type: 1, Value: nil}, {Type: 2, Value: nil}})
 	duplicateCriticalBase := []byte{0,1,0,0,0,0,0x80,1,0,0,0,0}
 	truncatedHeader := []byte{0,1,0}
 	truncatedValue := []byte{0,1,0,0,0,2,0xff}
-	duplicate, _ := EncodeTLVs([]TLV{{Type: 1, Value: nil}, {Type: 1, Value: nil}})
+	duplicate := []byte{0,1,0,0,0,0,0,1,0,0,0,0}
+	unknownThenLowerKnown := []byte{0,9,0,0,0,0,0,1,0,0,0,0}
 	for name, input := range map[string][]byte{
 		"unknown critical": unknownCritical,
 		"truncated header": truncatedHeader,
 		"truncated value": truncatedValue,
 		"duplicate": duplicate,
 		"critical/base duplicate": duplicateCriticalBase,
+		"unknown noncritical then lower known": unknownThenLowerKnown,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseTLVs(input, known); err == nil { t.Fatal("expected rejection") }
@@ -69,5 +70,4 @@ func TestTLVRejectsInvalidCorpus(t *testing.T) {
 	// A well-formed unknown noncritical TLV is intentionally skipped.
 	unknown, _ := EncodeTLVs([]TLV{{Type: 7, Value: []byte("ignored")}})
 	if got, err := ParseTLVs(unknown, known); err != nil || len(got) != 0 { t.Fatalf("unknown noncritical: %#v, %v", got, err) }
-	_ = unsorted
 }

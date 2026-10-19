@@ -58,7 +58,7 @@ func ParseTLVs(data []byte, knownTypes map[uint16]struct{}) ([]TLV, error) {
 		typ := binary.BigEndian.Uint16(data[offset : offset+2])
 		length := binary.BigEndian.Uint32(data[offset+2 : offset+6])
 		offset += TLVHeaderLen
-		if len(out) > 0 && typ <= previous {
+		if offset > TLVHeaderLen && typ <= previous {
 			return nil, fmt.Errorf("%w: TLVs must be sorted", ErrMalformed)
 		}
 		base := typ & TLVTypeMask
