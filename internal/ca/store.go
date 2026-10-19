@@ -196,6 +196,7 @@ func (s Store) load(passphrase string) (State, ed25519.PrivateKey, error) {
 	var st State
 	var enc encryptedKey
 	if strings.TrimSpace(passphrase) == "" { return st, nil, errors.New("passphrase must not be empty") }
+	if err := s.checkPermissions(); err != nil { return st, nil, err }
 	if err := readJSON(s.path(stateFile), &st); err != nil {
 		if errors.Is(err, os.ErrNotExist) { return st, nil, ErrNotInitialized }
 		return st, nil, fmt.Errorf("read CA state: %w", err)
@@ -211,6 +212,31 @@ func (s Store) load(passphrase string) (State, ed25519.PrivateKey, error) {
 	if !ok || base64.StdEncoding.EncodeToString(pub) != st.PublicKey { return st, nil, ErrWrongPassphrase }
 	if err = validateState(st); err != nil { return st, nil, err }
 	return st, priv, nil
+}
+
+func (s Store) checkPermissions() error {
+	dirInfo, err := os.Lstat(s.Dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) { return ErrNotInitialized }
+		return err
+	}
+	if !dirInfo.IsDir() || dirInfo.Mode()&os.ModeSymlink != 0 {
+		return errors.New("CA state path must be a real directory")
+	}
+	if dirInfo.Mode().Perm()&0077 != 0 {
+		return errors.New("CA state directory permissions must not allow group or other access")
+	}
+	for _, name := range []string{stateFile, keyFile} {
+		info, statErr := os.Lstat(s.path(name))
+		if statErr != nil { return statErr }
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s must be a regular file", name)
+		}
+		if info.Mode().Perm()&0077 != 0 {
+			return fmt.Errorf("%s permissions must not allow group or other access", name)
+		}
+	}
+	return nil
 }
 
 func (s Store) saveState(st State) error {

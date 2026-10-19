@@ -98,3 +98,14 @@ func TestMalformedStateIsNotReady(t *testing.T) {
 		t.Fatalf("tampered state accepted: %q, %v", status, err)
 	}
 }
+
+func TestInsecurePermissionsPreventReadiness(t *testing.T) {
+	dir := t.TempDir()
+	store := Store{Dir: dir}
+	if err := store.Init("passphrase"); err != nil { t.Fatal(err) }
+	if err := os.Chmod(filepath.Join(dir, keyFile), 0644); err != nil { t.Fatal(err) }
+	status, err := store.Status("passphrase")
+	if err == nil || strings.HasPrefix(status, "ready") {
+		t.Fatalf("insecure key permissions accepted: %q, %v", status, err)
+	}
+}
