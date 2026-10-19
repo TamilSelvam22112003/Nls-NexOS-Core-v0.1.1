@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+CONFIG=/etc/nls-ca/ca.env
+[ -r "$CONFIG" ] || { echo "missing $CONFIG" >&2; exit 1; }
+# The installer-generated secret is hex-only, so this file is safe to source.
+. "$CONFIG"
+: "${NLS_CA_PASSPHRASE:?NLS_CA_PASSPHRASE is required}"
+: "${CA_STATE_DIR:=/var/lib/nls-ca}"
+export NLS_CA_PASSPHRASE
+exec /usr/local/sbin/nls-core "$@" --dir "$CA_STATE_DIR"

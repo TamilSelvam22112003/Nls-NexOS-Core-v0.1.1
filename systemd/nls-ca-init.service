@@ -1,0 +1,28 @@
+[Unit]
+Description=Initialize NLS Router-CA state (one-shot)
+Documentation=https://github.com/TamilSelvam22112003/Nls-NexOS-Core-v0.1.1/blob/feat/ca-initialization-admin-cli/docs/INSTALL.md
+After=local-fs.target
+ConditionPathIsDirectory=/var/lib/nls-ca
+
+[Service]
+Type=oneshot
+User=nls-ca
+Group=nls-ca
+EnvironmentFile=/etc/nls-ca/ca.env
+ExecStart=/usr/local/libexec/nls-ca-init
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nls-ca
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+# Deliberately not enabled: initialization is an explicit, one-time admin action.
