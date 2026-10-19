@@ -14,7 +14,7 @@ Suite 1: Ed25519 signatures; X25519 ephemeral DH; HKDF-SHA256; AES-256-GCM; SHA-
 Signatures sign context || defined canonical bytes (or transcript hash where stated). No X.509 parsing occurs in the data path. One Ed25519 router key is used for RDR and handshake signatures; its X.509 certificate, issued by Router-CA, is only for TLS control-channel mTLS.
 
 ## 2. Common framing, enums, errors
-UDP datagram prefix is `version:u8(1), type:u8, flags:u16(0), body_len:u16, reserved:u16(0)` (8 bytes), followed by exactly body_len bytes. UDP payload maximum is 1200 bytes in v1. Unknown message type is silently dropped before state allocation. All offsets below are relative to the message body unless stated.
+UDP datagram prefix is `version:u8(1), type:u8, flags:u16(0), body_len:u16, reserved:u16(0)` (8 bytes), followed by exactly body_len bytes. UDP payload maximum is 1452 bytes for a 1500-byte outer path MTU in v1; implementations MUST reduce the effective inner MTU for smaller paths. Unknown message type is silently dropped before state allocation. All offsets below are relative to the message body unless stated.
 
 Message type codes: 0x01 M1_INIT; 0x02 M1_COOKIE; 0x03 M2; 0x04 M3; 0x05 M4; 0x10 DATA; 0x11 REKEY_INIT; 0x12 REKEY_ACK. Control TLV type IDs: 0x0001 heartbeat, 0x0002 heartbeat_ack, 0x0010 enrollment_request, 0x0011 enrollment_response, 0x0020 policy_sync, 0x0021 policy_ack, 0x0030 revocation_push, 0x0040 directory_lookup, 0x0041 directory_response, 0x7fff error. TLV critical bit is high bit of type; unknown critical rejects the message, unknown noncritical may be skipped. Control TLV framing: type:u16, length:u32, value[length], big-endian, sorted by type ascending; duplicates forbidden.
 
@@ -150,14 +150,14 @@ HKDF-Expand is called separately for each output using the stated info; output l
 **Cryptographic objection:** the above two DH values describe the same X25519 exchange twice (each side computes the same shared secret); they are not two independent DH contributions. Implementers must set IKM to one shared DH output, not concatenate duplicate DH values. This is a necessary correction to avoid pretending there is extra entropy. The exact key schedule is therefore IKM = DH1 (32 bytes), with DH2 computed by responder as the equivalent shared secret and equality implicit. This is normative.
 
 ## 8. Data plane
-NLS data UDP datagram: common 8-byte framing header with type 0x10, then 32-byte NLS data header, then encrypted entire inner IP packet, then 16-byte GCM tag. Data header is authenticated as AAD. Header:
+NLS data UDP datagram: common 8-byte framing header with type 0x10, then 32-byte NLS data header (including four reserved zero bytes), then encrypted entire inner IP packet, then 16-byte GCM tag. Data header is authenticated as AAD. Header:
 | Offset | Size | Field | Encoding |
 |---:|---:|---|---|
 | 0 | 1 | version | u8=1 |
 | 1 | 1 | flags | u8=0 |
 | 2 | 2 | session_id | u16, nonzero |
 | 4 | 16 | session_nonce_id | random per session |
-| 20 | 8 | sequence | u64 big-endian, starts 1 |
+| 20 | 8 | sequence | u64 big-endian, starts 1 |\n| 28 | 4 | reserved | all zero |
 Inner plaintext is the entire original IPv4 or IPv6 packet, including inner source/destination IP headers, transport header and payload. Outer IPv6/UDP destination is destination router WAN endpoint; outer endpoints remain visible. AAD = common framing header || NLS data header. AES-256-GCM ciphertext length equals plaintext length; tag 16 bytes. Receiver looks up session, checks session ID/nonce ID, replay window, verifies GCM tag before releasing plaintext, then validates inner IP packet and forwards. No plaintext on any failure.
 
 Replay window: 1024 sequence values per direction. Reject sequence <=0, duplicates, or values older than highest_seen-1023. Update replay window only after successful GCM authentication. At 2^32 packets or one hour initiate rekey; hard stop before sequence reaches 2^32+2^20 if rekey has not succeeded.
