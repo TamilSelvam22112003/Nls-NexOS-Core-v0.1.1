@@ -110,7 +110,12 @@ Body 100 bytes:
 Full framed M1_INIT = 108 bytes. To guarantee M1_COOKIE <= M1_INIT, M1_INIT UDP payload is padded to 128 bytes with zero padding outside body_len? **No**: framing body_len includes padding. Define body 120 bytes: fields above plus 20 zero padding bytes, so total = 128 bytes. Parser requires padding zero. Initiator retransmits exact M1 bytes. M1_INIT has no encrypted fields; unauthenticated and rate-limited. Responder validates version/length/padding/suite/IDs before generating cookie; no state allocated.
 
 ### M1_COOKIE (0x02; responder → initiator)
-Body 52 bytes: initiator_nonce[32], cookie[16], time_bucket:u32. Framed size 60 bytes, less than 128-byte M1_INIT. Cookie = first 16 bytes HMAC-SHA256(cookie_secret, source IPv6 || source UDP port || destination IPv6 || destination UDP port || initiator_router_id || destination_router_id || initiator_nonce || time_bucket:u32). Accept current and previous 10-minute bucket. Cookie secret rotates every 10 minutes while retaining prior key for one bucket. Wrong/expired cookie silently dropped. Cookie carries no identity claims and is not signed.
+Body 52 bytes; framed size 60 bytes, less than 128-byte M1_INIT.
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 32 | initiator_nonce | echoed bytes |
+| 32 | 16 | cookie | HMAC-SHA256 truncated to 16 bytes |
+| 48 | 4 | time_bucket | u32 big-endian | Cookie = first 16 bytes HMAC-SHA256(cookie_secret, source IPv6 || source UDP port || destination IPv6 || destination UDP port || initiator_router_id || destination_router_id || initiator_nonce || time_bucket:u32). Accept current and previous 10-minute bucket. Cookie secret rotates every 10 minutes while retaining prior key for one bucket. Wrong/expired cookie silently dropped. Cookie carries no identity claims and is not signed.
 
 ### M1_INIT(cookie) (0x01; initiator → responder)
 Same 120-byte body as padded M1_INIT, cookie occupies bytes 100..115 and reserved padding bytes 116..119 are zero; add cookie_present:u8? **Wire v1 fixed layout:** byte 100 cookie_present=1, bytes 101..116 cookie[16], bytes 117..119 zero. Initial M1 has byte100=0 and bytes101..119 zero. This changes padded body to 120 bytes; total framed size 128. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
@@ -129,10 +134,20 @@ Body 244 bytes:
 M2 framing adds 8 bytes; total framed M2 size is 252 bytes. The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes, encrypted to 80 bytes. Key/nonce/AD per key schedule below. Initiator validates lengths, transcript, decrypts identity, online-lookups responder RDR, verifies signature against RDR key, status and validity before proceeding. Failure sends no detailed UDP error.
 
 ### M3 (0x04; initiator → responder)
-Body 178 bytes: transcript_hash_prior[32], encrypted_identity_len:u16=80, encrypted_identity[80], signature[64]. Encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 186 bytes.
+Body 178 bytes; framed size 186 bytes.
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 32 | transcript_hash_prior | SHA-256 |
+| 32 | 2 | encrypted_identity_len | u16=80 |
+| 34 | 80 | encrypted_identity | AES-256-GCM ciphertext+tag |
+| 114 | 64 | signature | Ed25519 over context || SHA-256(prior transcript || M3 fields excluding signature) | Encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 186 bytes.
 
 ### M4 (0x05; responder → initiator)
-Body 64 bytes: transcript_hash_prior[32], finish_mac[32]. finish_mac = HMAC-SHA256(k_finish_responder, context || transcript_hash_prior). Framed size 72 bytes. Initiator verifies constant-time, then session is established. M4 has no encrypted identity; it authenticates handshake completion. Bad tag/signature/transcript silently drops and tears down tentative state.
+Body 64 bytes; framed size 72 bytes.
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 32 | transcript_hash_prior | SHA-256 |
+| 32 | 32 | finish_mac | HMAC-SHA256(k_finish_responder, context || transcript_hash_prior) | Initiator verifies constant-time, then session is established. M4 has no encrypted identity; it authenticates handshake completion. Bad tag/signature/transcript silently drops and tears down tentative state.
 
 ## 7. Key schedule
 Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_INIT). Let DH1 = X25519(initiator ephemeral private, responder ephemeral public), DH2 = X25519(responder ephemeral private, initiator ephemeral public). Reject zero output. IKM = DH1 || DH2. Salt = TH0. HKDF-SHA256 extract/expand:
@@ -163,7 +178,23 @@ Inner plaintext is the entire original IPv4 or IPv6 packet, including inner sour
 Replay window: 1024 sequence values per direction. Reject sequence <=0, duplicates, or values older than highest_seen-1023. Update replay window only after successful GCM authentication. At 2^32 packets or one hour initiate rekey; hard stop before sequence reaches 2^32+2^20 if rekey has not succeeded.
 
 ## 9. Rekey
-REKEY_INIT type 0x11 and REKEY_ACK type 0x12, both use current session data key and normal data header sequence/replay protections. Body after header: epoch:u32, new_ephemeral_x25519[32], transcript_hash[32], signature[64] (132 bytes); ACK uses epoch:u32, responder_ephemeral[32], transcript_hash[32], signature[64] (132 bytes). Signature context is `NLS-v1-REKEY\0` and signs transcript hash plus epoch and ephemeral public key. Derive replacement data keys from X25519(new ephemeral private, peer ephemeral public), salt = SHA-256(old transcript hash || rekey transcript hash), info labels `NLS-v1 rekey i2r` and `NLS-v1 rekey r2i` (32 bytes each) and fresh 4-byte salts. New epoch must be current+1; retransmit identical message on timeout, max 3 attempts over 3 seconds. Switch atomically after authenticated ACK; old keys accepted for 3 seconds only for in-flight packets. If rekey fails and CA unreachable, terminate session and drop PROTECT traffic; if peer is revoked, terminate immediately and erase keys. Re-handshake requires online CA lookup.
+REKEY_INIT type 0x11 and REKEY_ACK type 0x12, both use current session data key and normal data header sequence/replay protections. Each has a 32-byte data header, 132-byte body, and 16-byte tag in addition to the 8-byte common framing.
+
+REKEY_INIT body (initiator → responder):
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 4 | epoch | u32, current epoch + 1 |
+| 4 | 32 | new_ephemeral_x25519 | raw X25519 public key |
+| 36 | 32 | transcript_hash | SHA-256 |
+| 68 | 64 | signature | Ed25519, context-separated |
+
+REKEY_ACK body (responder → initiator):
+| Offset | Size | Field | Encoding |
+|---:|---:|---|---|
+| 0 | 4 | epoch | u32, exact requested next epoch |
+| 4 | 32 | responder_ephemeral_x25519 | raw X25519 public key |
+| 36 | 32 | transcript_hash | SHA-256 |
+| 68 | 64 | signature | Ed25519, context-separated | Signature context is `NLS-v1-REKEY\0` and signs transcript hash plus epoch and ephemeral public key. Derive replacement data keys from X25519(new ephemeral private, peer ephemeral public), salt = SHA-256(old transcript hash || rekey transcript hash), info labels `NLS-v1 rekey i2r` and `NLS-v1 rekey r2i` (32 bytes each) and fresh 4-byte salts. New epoch must be current+1; retransmit identical message on timeout, max 3 attempts over 3 seconds. Switch atomically after authenticated ACK; old keys accepted for 3 seconds only for in-flight packets. If rekey fails and CA unreachable, terminate session and drop PROTECT traffic; if peer is revoked, terminate immediately and erase keys. Re-handshake requires online CA lookup.
 
 ## 10. Sizes and MTU arithmetic
 - Earlier report said initial M1 fields total 100 bytes and plus 16 cookie = 116 bytes; this was incomplete because it omitted padding and cookie-presence framing. Frozen body is 120 bytes, UDP protocol framing is 8 bytes, so both initial and cookie-bearing M1 are 128 bytes. M1_COOKIE body 52 + framing 8 = 60 bytes and is smaller than M1.
