@@ -35,7 +35,7 @@ func TestRestartPersistenceAndReadyState(t *testing.T) {
 	first := Store{Dir: dir}
 	pass := "correct horse battery staple"
 	if err := first.Init(pass); err != nil { t.Fatal(err) }
-	token, err := first.SetEnrollmentCredential(pass, "router-a", 10*time.Minute)
+	token, err := first.SetScopedEnrollmentCredential(pass, "router-a", strings.Repeat("a", 64), "2001:db8::1", 51820, 10*time.Minute)
 	if err != nil { t.Fatal(err) }
 	if token == "" { t.Fatal("expected one-time token") }
 	if err = first.SetPolicy(pass, []string{"10.0.0.0/8", "2001:db8:1::/48"}, []string{"192.0.2.0/24"}); err != nil { t.Fatal(err) }

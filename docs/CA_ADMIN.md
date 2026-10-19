@@ -1,44 +1,58 @@
-# Router-CA local administration
+# Router-CA enrollment and control service
 
-The initial Router-CA implementation is a local state bootstrap, not a complete
-network enrollment service. It does not listen on a socket or issue router
-certificates yet.
+This milestone adds the TLS enrollment endpoint and the mTLS control endpoint. The
+service is a prototype implementation of the v1 protocol and must pass CI and
+integration testing before deployment.
 
-## Security model
+## Server startup
 
-- Set `NLS_CA_PASSPHRASE` in the process environment. Never put the passphrase
-  in CLI arguments, shell history, scripts, or logs.
-- The Ed25519 CA private key is encrypted with AES-256-GCM. Its 32-byte key is
-  derived with Argon2id (3 iterations, 64 MiB, one lane); salt and nonce are
-  generated with `crypto/rand`.
-- State files are written atomically with mode 0600 in a mode-0700 directory.
-  The state persists the CA public identity, trust registry, router registry,
-  revocation registry, enrollment credential metadata, policy, and access
-  controls. The enrollment token itself is not persisted: only its SHA-256
-  digest is stored.
-- `status` reports `ready for enrollment` only if the key decrypts, the
-  private/public identity binding and trust registry validate, all registries
-  exist and validate, an unexpired unused enrollment credential exists, policy
-  is configured, and enrollment access controls are enabled. Any validation
-  error fails closed.
-
-## Bootstrap
+Use the same DNS name for both listeners and export the CA root certificate with
+that DNS name before distributing it to routers:
 
 ```sh
 export NLS_CA_PASSPHRASE='use-a-long-unique-secret-from-a-secret-manager'
-nls-core init --dir /var/lib/nls-ca
-nls-core set-enrollment-credentials --dir /var/lib/nls-ca --name router-01 --ttl 10m
-nls-core set-policy --dir /var/lib/nls-ca --protect-prefix 10.0.0.0/8,2001:db8:100::/48 --bypass-prefix 192.0.2.0/24
-nls-core set-access-controls --dir /var/lib/nls-ca --allow-enrollment=true --max-active-routers 1000
+nls-core export-ca-cert --dir /var/lib/nls-ca --tls-name ca.example --out ca-cert.pem
+nls-core serve-enrollment --dir /var/lib/nls-ca --tls-name ca.example --listen :8443
+nls-core serve-control --dir /var/lib/nls-ca --tls-name ca.example --listen :8444
+```
+
+Run the two listeners as separate processes/services. Both require TLS 1.3.
+Enrollment uses server-authenticated TLS; control requires a client certificate
+issued by this CA and a registry entry in ACTIVE state.
+
+## Key-bound enrollment
+
+The router first generates its Ed25519 private key and PKCS#10 CSR locally. The
+administrator obtains the SHA-256 hash of the raw Ed25519 public key and creates
+a one-time credential scoped to the router name, public-key hash, and advertised
+IPv6/UDP endpoint:
+
+```sh
+nls-core set-enrollment-credentials --dir /var/lib/nls-ca \
+  --name router-01 --public-key-sha256 <64-hex-character-hash> \
+  --endpoint-ipv6 2001:db8::10 --endpoint-udp-port 51820 --ttl 10m
+```
+
+The token is displayed once and must be delivered over a secure channel. The
+CA verifies the CSR signature and exact key hash, issues an Ed25519 X.509 router
+certificate, signs the 322-byte RDR v1, and atomically records token consumption
+and the router registry entry before returning certificate bytes. Replays and
+expired tokens are rejected.
+
+## Revocation and readiness
+
+```sh
+nls-core revoke-router --dir /var/lib/nls-ca --router-id <32-hex-character-id> --reason "key compromise"
 nls-core status --dir /var/lib/nls-ca
 ```
 
-The enrollment command prints a cryptographically random, single-use token once.
-Deliver it to the named router over a secure channel. The current state layer
-stores the digest and expiry, but token redemption/atomic consumption belongs
-to the not-yet-implemented enrollment service. Do not treat this bootstrap
-command as a production-ready CA server.
+Control authentication checks both certificate/key binding and ACTIVE registry
+status. The control channel sends heartbeat acknowledgements, policy snapshots,
+revocation snapshots, and supports online RDR lookup. A revoked router is
+rejected on the next authorization check and cannot establish a new control
+connection.
 
-Policy prefixes are canonicalized and sorted. An identical prefix cannot be
-configured as both PROTECT and BYPASS. Absence of policy never implies BYPASS.
-The current `status` command does not expose secret key material or token hashes.
+The implementation persists CA state locally with restricted permissions.
+Token redemption, certificate issuance and revocation are serialized with an
+OS file lock. Deployment still requires review of service supervision, rate
+limits, audit retention, key backup/rotation, and external integration tests.

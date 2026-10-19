@@ -54,6 +54,9 @@ type encryptedKey struct {
 type EnrollmentCredential struct {
 	Name string `json:"name"`
 	TokenSHA256 string `json:"token_sha256"`
+	PublicKeySHA256 string `json:"public_key_sha256"`
+	EndpointIPv6 string `json:"endpoint_ipv6"`
+	EndpointUDPPort uint16 `json:"endpoint_udp_port"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Used bool `json:"used"`
 }
@@ -62,6 +65,11 @@ type RouterRecord struct {
 	RouterID string `json:"router_id"`
 	Name string `json:"name"`
 	PublicKey string `json:"public_key"`
+	CertificateDER string `json:"certificate_der,omitempty"`
+	CertificateSerial uint64 `json:"certificate_serial,omitempty"`
+	RDR string `json:"rdr,omitempty"`
+	EndpointIPv6 string `json:"endpoint_ipv6,omitempty"`
+	EndpointUDPPort uint16 `json:"endpoint_udp_port,omitempty"`
 	Status string `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -87,6 +95,9 @@ type AccessControls struct {
 
 type State struct {
 	Version int `json:"version"`
+	PolicyGeneration uint64 `json:"policy_generation"`
+	RevocationGeneration uint64 `json:"revocation_generation"`
+	ControlEpoch uint64 `json:"control_epoch"`
 	CAID string `json:"ca_id"`
 	PublicKey string `json:"public_key_ed25519"`
 	TrustRegistry map[string]string `json:"trust_registry"`
@@ -133,7 +144,7 @@ func (s Store) Status(passphrase string) (string, error) {
 	st, _, err := s.load(passphrase)
 	if err != nil { return "not ready: " + err.Error(), err }
 	if err = validateState(st); err != nil { return "not ready: " + err.Error(), err }
-	if st.Enrollment == nil || st.Enrollment.Used || !time.Now().UTC().Before(st.Enrollment.ExpiresAt) {
+	if st.Enrollment == nil || st.Enrollment.Used || st.Enrollment.PublicKeySHA256 == "" || st.Enrollment.EndpointIPv6 == "" || st.Enrollment.EndpointUDPPort == 0 || !time.Now().UTC().Before(st.Enrollment.ExpiresAt) {
 		err = errors.New("no valid unused enrollment credential")
 		return "not ready: " + err.Error(), err
 	}
@@ -149,14 +160,26 @@ func (s Store) Status(passphrase string) (string, error) {
 }
 
 func (s Store) SetEnrollmentCredential(passphrase, name string, ttl time.Duration) (string, error) {
+	return s.SetScopedEnrollmentCredential(passphrase, name, "", "", 0, ttl)
+}
+
+// SetScopedEnrollmentCredential binds a one-time token to the router public key and IPv6 UDP endpoint.
+func (s Store) SetScopedEnrollmentCredential(passphrase, name, publicKeySHA256, endpointIPv6 string, port uint16, ttl time.Duration) (string, error) {
 	if err := validateName(name); err != nil { return "", err }
 	if ttl <= 0 || ttl > maxTokenTTL { return "", fmt.Errorf("TTL must be greater than zero and at most %s", maxTokenTTL) }
+	if publicKeySHA256 != "" {
+		if len(publicKeySHA256) != sha256.Size*2 { return "", errors.New("public-key SHA-256 must be 64 hexadecimal characters") }
+		if _, err := hex.DecodeString(publicKeySHA256); err != nil { return "", errors.New("public-key SHA-256 must be hexadecimal") }
+		addr, err := netip.ParseAddr(endpointIPv6)
+		if err != nil || !addr.Is6() || addr.Is4In6() { return "", errors.New("endpoint must be a valid IPv6 address") }
+		if port == 0 { return "", errors.New("UDP endpoint port must be 1..65535") }
+	}
 	st, _, err := s.load(passphrase)
 	if err != nil { return "", err }
 	token := make([]byte, 32)
 	if _, err = rand.Read(token); err != nil { return "", err }
 	sum := sha256.Sum256(token)
-	st.Enrollment = &EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
+	st.Enrollment = &EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), PublicKeySHA256:strings.ToLower(publicKeySHA256), EndpointIPv6:endpointIPv6, EndpointUDPPort:port, ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return "", err }
 	if err = s.saveState(st); err != nil { return "", err }
@@ -169,6 +192,7 @@ func (s Store) SetPolicy(passphrase string, protect, bypass []string) error {
 	p, err := canonicalPrefixes(protect, bypass)
 	if err != nil { return err }
 	st.Policy = p
+	st.PolicyGeneration++
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return err }
 	return s.saveState(st)
@@ -273,6 +297,12 @@ func validateState(st State) error {
 		if len(st.Enrollment.TokenSHA256) != sha256.Size*2 { return errors.New("invalid enrollment token hash") }
 		if _, err := hex.DecodeString(st.Enrollment.TokenSHA256); err != nil { return errors.New("invalid enrollment token hash") }
 		if st.Enrollment.ExpiresAt.IsZero() { return errors.New("invalid enrollment expiry") }
+		if st.Enrollment.PublicKeySHA256 != "" {
+			if len(st.Enrollment.PublicKeySHA256) != sha256.Size*2 { return errors.New("invalid enrollment public-key hash") }
+			if _, err := hex.DecodeString(st.Enrollment.PublicKeySHA256); err != nil { return errors.New("invalid enrollment public-key hash") }
+			addr, err := netip.ParseAddr(st.Enrollment.EndpointIPv6)
+			if err != nil || !addr.Is6() || addr.Is4In6() || st.Enrollment.EndpointUDPPort == 0 { return errors.New("invalid enrollment endpoint") }
+		}
 	}
 	return nil
 }

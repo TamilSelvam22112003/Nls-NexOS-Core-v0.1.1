@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/TamilSelvam22112003/Nls-NexOS-Core-v0.1.1/internal/ca"
+	"github.com/TamilSelvam22112003/Nls-NexOS-Core-v0.1.1/internal/enrollment"
 )
 
 func main() {
@@ -45,6 +50,14 @@ func run(args []string) error {
 		return commandPolicy(args[1:])
 	case "set-access-controls":
 		return commandAccess(args[1:])
+	case "serve-enrollment":
+		return serve(args[1:], true)
+	case "serve-control":
+		return serve(args[1:], false)
+	case "revoke-router":
+		return commandRevoke(args[1:])
+	case "export-ca-cert":
+		return commandExportCACert(args[1:])
 	case "status":
 		fs := flag.NewFlagSet(command, flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
@@ -67,6 +80,9 @@ func commandEnrollment(args []string) error {
 	fs.SetOutput(os.Stderr)
 	dir := fs.String("dir", "/var/lib/nls-ca", "CA state directory")
 	name := fs.String("name", "", "router name scoped to the enrollment credential")
+	publicKeySHA256 := fs.String("public-key-sha256", "", "SHA-256 of the intended router Ed25519 public key")
+	endpointIPv6 := fs.String("endpoint-ipv6", "", "router advertised IPv6 endpoint")
+	endpointPort := fs.Uint("endpoint-udp-port", 0, "router advertised UDP port")
 	ttlText := fs.String("ttl", "10m", "credential lifetime (maximum 10m)")
 	if err := fs.Parse(args); err != nil { return err }
 	if fs.NArg() != 0 { return fmt.Errorf("unexpected positional arguments") }
@@ -74,7 +90,8 @@ func commandEnrollment(args []string) error {
 	if err != nil { return err }
 	ttl, err := time.ParseDuration(*ttlText)
 	if err != nil { return fmt.Errorf("invalid TTL: %w", err) }
-	token, err := (ca.Store{Dir:*dir}).SetEnrollmentCredential(pass, *name, ttl)
+	if *publicKeySHA256 == "" || *endpointIPv6 == "" || *endpointPort < 1 || *endpointPort > 65535 { return fmt.Errorf("--public-key-sha256, --endpoint-ipv6, and --endpoint-udp-port are required") }
+	token, err := (ca.Store{Dir:*dir}).SetScopedEnrollmentCredential(pass, *name, *publicKeySHA256, *endpointIPv6, uint16(*endpointPort), ttl)
 	if err != nil { return err }
 	fmt.Println("Enrollment token (shown once; store securely):")
 	fmt.Println(token)
@@ -112,6 +129,55 @@ func commandAccess(args []string) error {
 	return nil
 }
 
+
+func serve(args []string, isEnrollment bool) error {
+	name := "serve-control"
+	defaultListen := ":8444"
+	if isEnrollment { name="serve-enrollment"; defaultListen=":8443" }
+	fs:=flag.NewFlagSet(name,flag.ContinueOnError);fs.SetOutput(os.Stderr)
+	dir:=fs.String("dir","/var/lib/nls-ca","CA state directory")
+	listen:=fs.String("listen",defaultListen,"TLS listen address")
+	tlsName:=fs.String("tls-name","localhost","TLS certificate DNS name")
+	if err:=fs.Parse(args);err!=nil{return err}
+	if fs.NArg()!=0{return fmt.Errorf("unexpected positional arguments")}
+	pass,err:=passphrase();if err!=nil{return err}
+	ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
+	svc:=enrollment.Service{Store:ca.Store{Dir:*dir},Passphrase:pass,TLSName:*tlsName}
+	fmt.Fprintf(os.Stderr,"%s listening on %s (TLS 1.3)\n",name,*listen)
+	if isEnrollment{return svc.ServeEnrollment(ctx,*listen)}
+	return svc.ServeControl(ctx,*listen)
+}
+
+func commandRevoke(args []string) error {
+	fs:=flag.NewFlagSet("revoke-router",flag.ContinueOnError);fs.SetOutput(os.Stderr)
+	dir:=fs.String("dir","/var/lib/nls-ca","CA state directory")
+	routerID:=fs.String("router-id","","32 hexadecimal characters")
+	reason:=fs.String("reason","","revocation reason")
+	if err:=fs.Parse(args);err!=nil{return err}
+	if fs.NArg()!=0{return fmt.Errorf("unexpected positional arguments")}
+	pass,err:=passphrase();if err!=nil{return err}
+	if len(*routerID)!=32{return fmt.Errorf("--router-id must be 32 hexadecimal characters")}
+	if _,err=hex.DecodeString(*routerID);err!=nil{return fmt.Errorf("--router-id must be hexadecimal")}
+	if err=(ca.Store{Dir:*dir}).RevokeRouter(pass,*routerID,*reason);err!=nil{return err}
+	fmt.Println("router revoked; control sessions will be rejected on their next authorization check")
+	return nil
+}
+
+func commandExportCACert(args []string) error {
+	fs:=flag.NewFlagSet("export-ca-cert",flag.ContinueOnError);fs.SetOutput(os.Stderr)
+	dir:=fs.String("dir","/var/lib/nls-ca","CA state directory")
+	tlsName:=fs.String("tls-name","localhost","TLS certificate DNS name")
+	out:=fs.String("out","ca-cert.pem","output CA certificate PEM")
+	if err:=fs.Parse(args);err!=nil{return err}
+	if fs.NArg()!=0{return fmt.Errorf("unexpected positional arguments")}
+	pass,err:=passphrase();if err!=nil{return err}
+	_,_,err=(ca.Store{Dir:*dir}).TLSCertificate(pass,*tlsName);if err!=nil{return err}
+	pemBytes,err:=(ca.Store{Dir:*dir}).RootCertificatePEM(pass,*tlsName);if err!=nil{return err}
+	if err=os.WriteFile(*out,pemBytes,0644);err!=nil{return err}
+	fmt.Println("CA certificate exported:",*out)
+	return nil
+}
+
 func passphrase() (string, error) {
 	p := os.Getenv("NLS_CA_PASSPHRASE")
 	if strings.TrimSpace(p) == "" {
@@ -134,10 +200,14 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, `NLS Router-CA admin CLI
 Usage:
   nls-core init [--dir DIR]
-  nls-core set-enrollment-credentials --name NAME [--ttl 10m] [--dir DIR]
+  nls-core set-enrollment-credentials --name NAME --public-key-sha256 HEX --endpoint-ipv6 IPV6 --endpoint-udp-port PORT [--ttl 10m] [--dir DIR]
   nls-core set-policy --protect-prefix CIDR[,CIDR...] [--bypass-prefix CIDR[,CIDR...]] [--dir DIR]
   nls-core set-access-controls [--allow-enrollment=true|false] [--max-active-routers N] [--dir DIR]
   nls-core status [--dir DIR]
+  nls-core serve-enrollment [--listen :8443] [--tls-name ca.example] [--dir DIR]
+  nls-core serve-control [--listen :8444] [--tls-name ca.example] [--dir DIR]
+  nls-core revoke-router --router-id HEX32 --reason TEXT [--dir DIR]
+  nls-core export-ca-cert --tls-name ca.example --out ca-cert.pem [--dir DIR]
 
 All commands except help require NLS_CA_PASSPHRASE in the environment.
 `)
