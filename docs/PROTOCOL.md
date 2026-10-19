@@ -90,7 +90,7 @@ Unsigned body 258 bytes; signature 64 bytes; total signed RDR 322 bytes. Certifi
 | 104 | 8 | generation | u64 |
 | 112 | 16 | record_nonce | random |
 | 128 | 66 | reserved_extension | zero in v1 |
-| 194 | 64 | signature | Ed25519 over context || bytes 0..257 |
+| 258 | 64 | signature | Ed25519 over context || unsigned body bytes 0..257 |
 
 **Length correction:** the earlier report's 322-byte total was wrong for its earlier proposed field layout (258-byte unsigned body + 64-byte signature arithmetic was correct, but that layout's listed fields did not total 258). This frozen layout explicitly reserves 64 extension bytes: unsigned body = 258, total = 322. Verifier checks canonical fields/reserved zero, signature, validity, status, serial/cert registry binding and endpoint_count=1. Expiry and status checked before use.
 
@@ -116,7 +116,7 @@ Body 52 bytes: initiator_nonce[32], cookie[16], time_bucket:u32. Framed size 60 
 Same 120-byte body as padded M1_INIT, cookie occupies bytes 100..115 and reserved padding bytes 116..119 are zero; add cookie_present:u8? **Wire v1 fixed layout:** byte 100 cookie_present=1, bytes 101..116 cookie[16], bytes 117..119 zero. Initial M1 has byte100=0 and bytes101..119 zero. This changes padded body to 120 bytes; total framed size 128. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
 
 ### M2 (0x03; responder → initiator)
-Body 200 bytes:
+Body 244 bytes:
 | Offset | Size | Field | Encoding |
 |---:|---:|---|---|
 | 0 | 32 | responder_nonce | random |
@@ -126,10 +126,10 @@ Body 200 bytes:
 | 98 | 80 | encrypted_identity | AES-256-GCM ciphertext+tag |
 | 178 | 2 | signature_len | u16=64 |
 | 180 | 64 | signature | Ed25519 over context || SHA256(prior transcript || M2 fields excluding signature) |
-M2 framing adds 8 bytes. The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes, encrypted to 80 bytes. Key/nonce/AD per key schedule below. Initiator validates lengths, transcript, decrypts identity, online-lookups responder RDR, verifies signature against RDR key, status and validity before proceeding. Failure sends no detailed UDP error.
+M2 framing adds 8 bytes; total framed M2 size is 252 bytes. The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes, encrypted to 80 bytes. Key/nonce/AD per key schedule below. Initiator validates lengths, transcript, decrypts identity, online-lookups responder RDR, verifies signature against RDR key, status and validity before proceeding. Failure sends no detailed UDP error.
 
 ### M3 (0x04; initiator → responder)
-Body 168 bytes: transcript_hash_prior[32], encrypted_identity_len:u16=80, encrypted_identity[80], signature[64]. Encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 176 bytes.
+Body 178 bytes: transcript_hash_prior[32], encrypted_identity_len:u16=80, encrypted_identity[80], signature[64]. Encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 186 bytes.
 
 ### M4 (0x05; responder → initiator)
 Body 64 bytes: transcript_hash_prior[32], finish_mac[32]. finish_mac = HMAC-SHA256(k_finish_responder, context || transcript_hash_prior). Framed size 72 bytes. Initiator verifies constant-time, then session is established. M4 has no encrypted identity; it authenticates handshake completion. Bad tag/signature/transcript silently drops and tears down tentative state.
