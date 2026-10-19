@@ -107,9 +107,12 @@ func (s Service) handleControl(conn net.Conn) {
 			epoch:=binary.BigEndian.Uint64(value[16:24])
 			lastRev:=binary.BigEndian.Uint64(value[24:32])
 			if requestID==0||senderTime==0||epoch==0 { return }
-			if err=s.Store.RecordControlHeartbeat(s.Passphrase,routerID,epoch);err!=nil{return}
 			currentState,stateErr:=s.Store.LoadState(s.Passphrase)
 			if stateErr!=nil||lastRev>currentState.RevocationGeneration{return}
+			clockSkew:=uint64(currentState.Access.MaxClockSkewSeconds)*1000
+			serverTime:=uint64(nowMillis())
+			if senderTime>serverTime && senderTime-serverTime>clockSkew || serverTime>senderTime && serverTime-senderTime>clockSkew{return}
+			if err=s.Store.RecordControlHeartbeat(s.Passphrase,routerID,epoch);err!=nil{return}
 			ack:=append([]byte(nil),value...)
 			ack=appendU64(ack,uint64(nowMillis()))
 			if err=writeTLV(tlsConn,TLVHeartbeatAck,ack);err!=nil{return}
@@ -199,6 +202,7 @@ func errorCode(err error)uint16 {
 	case errors.Is(err,ca.ErrBadSignature):return 0x0007
 	case errors.Is(err,ca.ErrRevoked):return 0x000b
 	case errors.Is(err,ca.ErrUnknownRouter):return 0x000c
+	case errors.Is(err,ca.ErrPolicyDenied):return 0x000e
 	default:return 0x0016
 	}
 }

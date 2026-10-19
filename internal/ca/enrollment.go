@@ -37,6 +37,7 @@ var (
 	ErrBadSignature = errors.New("BAD_SIGNATURE")
 	ErrRevoked = errors.New("REVOKED")
 	ErrUnknownRouter = errors.New("UNKNOWN_ROUTER")
+	ErrPolicyDenied = errors.New("POLICY_DENIED")
 )
 
 type IssuedEnrollment struct {
@@ -75,14 +76,14 @@ func (s Store) IssueEnrollment(passphrase, name, token string, csrDER []byte) (I
 	if cred.Used { return out, ErrTokenReused }
 	if !time.Now().UTC().Before(cred.ExpiresAt) { return out, ErrTokenExpired }
 	if !st.Access.Configured || !st.Access.AllowEnrollment || !st.Policy.Configured {
-		return out, ErrBadCredential
+		return out, ErrPolicyDenied
 	}
 	if cred.PublicKeySHA256 == "" || cred.EndpointIPv6 == "" || cred.EndpointUDPPort == 0 {
 		return out, ErrBadCredential
 	}
 	active := 0
 	for _, router := range st.Routers { if router.Status == "ACTIVE" { active++ } }
-	if active >= st.Access.MaxActiveRouters { return out, errors.New("POLICY_DENIED: active router limit reached") }
+	if active >= st.Access.MaxActiveRouters { return out, ErrPolicyDenied }
 
 	csr, err := x509.ParseCertificateRequest(csrDER)
 	if err != nil || !bytes.Equal(csr.Raw, csrDER) || csr.CheckSignature() != nil {

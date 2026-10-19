@@ -92,6 +92,7 @@ type AccessControls struct {
 	Configured bool `json:"configured"`
 	AllowEnrollment bool `json:"allow_enrollment"`
 	MaxActiveRouters int `json:"max_active_routers"`
+	MaxClockSkewSeconds int `json:"max_clock_skew_seconds"`
 }
 
 type State struct {
@@ -210,7 +211,7 @@ func (s Store) SetAccessControls(passphrase string, allow bool, maxRouters int) 
 	if maxRouters < 1 || maxRouters > 1_000_000 { return errors.New("max active routers must be in range 1..1000000") }
 	st, _, err := s.load(passphrase)
 	if err != nil { return err }
-	st.Access = AccessControls{Configured:true, AllowEnrollment:allow, MaxActiveRouters:maxRouters}
+	st.Access = AccessControls{Configured:true, AllowEnrollment:allow, MaxActiveRouters:maxRouters, MaxClockSkewSeconds:300}
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return err }
 	return s.saveState(st)
@@ -233,6 +234,7 @@ func (s Store) load(passphrase string) (State, ed25519.PrivateKey, error) {
 		if errors.Is(err, os.ErrNotExist) { return st, nil, ErrNotInitialized }
 		return st, nil, fmt.Errorf("read CA state: %w", err)
 	}
+	if st.Access.Configured && st.Access.MaxClockSkewSeconds == 0 { st.Access.MaxClockSkewSeconds = 300 }
 	if err := readJSON(s.path(keyFile), &enc); err != nil {
 		return st, nil, fmt.Errorf("read encrypted CA key: %w", err)
 	}
@@ -299,7 +301,7 @@ func validateState(st State) error {
 		if len(st.Policy.ProtectPrefixes)+len(st.Policy.BypassPrefixes) == 0 { return errors.New("configured policy has no prefixes") }
 		if _, err := canonicalPrefixes(st.Policy.ProtectPrefixes, st.Policy.BypassPrefixes); err != nil { return fmt.Errorf("invalid policy: %w", err) }
 	}
-	if st.Access.Configured && (st.Access.MaxActiveRouters < 1 || st.Access.MaxActiveRouters > 1_000_000) { return errors.New("invalid access-control router limit") }
+	if st.Access.Configured && (st.Access.MaxActiveRouters < 1 || st.Access.MaxActiveRouters > 1_000_000 || st.Access.MaxClockSkewSeconds < 1 || st.Access.MaxClockSkewSeconds > 3600) { return errors.New("invalid access-control router limit or clock skew") }
 	if st.Enrollment != nil {
 		if err := validateCredential(*st.Enrollment); err != nil { return err }
 	}
