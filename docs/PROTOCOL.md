@@ -32,11 +32,11 @@ Credentials only inside authenticated TLS; never log secrets.
 
 ## Certificate and Router Directory Record
 Proposed compact canonical binary records, not X.509; this conflicts with Go TLS and is unresolved. Certificate unsigned body 112 bytes: version:u8=1, sig_alg:u8=1 Ed25519, reserved:u16=0, router_id[16], ed25519_pubkey[32], not_before:u64, not_after:u64, serial[16], capabilities:u32, policy_epoch:u64, issuer_key_id[16]. Signature[64] over ASCII `NLS-CERT-v1\0` || body; total 176 bytes.
-RDR unsigned body: version:u8=1, sig_alg:u8=1, reserved:u16=0, router_id[16], wan_ipv6[16], udp_port:u16, status:u8 (1 ACTIVE,2 REVOKED,3 DISABLED), reserved:u8=0, cert_len:u16=176, cert[176], generation:u64, issued_at:u64, expires_at:u64, nonce[16]. Signature[64] over `NLS-RDR-v1\0` || unsigned body. TTL 300s; cert max 90 days; one IPv6 endpoint.
+RDR unsigned body: version:u8=1, sig_alg:u8=1, reserved:u16=0, router_id[16], wan_ipv6[16], udp_port:u16, status:u8 (1 ACTIVE,2 REVOKED,3 DISABLED), reserved:u8=0, cert_len:u16=176, cert[176], generation:u64, issued_at:u64, expires_at:u64, nonce[16] (258 bytes). Signature[64] over `NLS-RDR-v1\0` || unsigned body; total RDR length 322 bytes. TTL 300s; cert max 90 days; one IPv6 endpoint.
 
 ## Handshake
 Cookie = first 16 bytes HMAC-SHA256(secret, source IPv6[16] || source port:u16 || destination IPv6[16] || destination port:u16 || router_id[16] || bucket:u64). Rotate secret every 10 min; accept current/previous bucket; allocate no state before validation.
-- M1_INIT first body 116 bytes: client_nonce[32], initiator_id[16], destination_id[16], ephemeral_X25519_pub[32], suite:u16=1, reserved:u16=0. M1_COOKIE body 56 bytes: client_nonce[32], cookie[16], bucket:u64. M1 echo body 132 bytes: first body + cookie[16].
+- M1_INIT first body 100 bytes: client_nonce[32], initiator_id[16], destination_id[16], ephemeral_X25519_pub[32], suite:u16=1, reserved:u16=0. M1_COOKIE body 56 bytes: client_nonce[32], cookie[16], bucket:u64. M1 echo body 116 bytes: first body + cookie[16].
 - M2: responder_nonce[32], responder_ephemeral_pub[32], responder_id[16], sealed_len:u16, sealed bytes. Plaintext certificate[176]+transcript_hash[32]. Envelope nonce[12]+ciphertext+tag[16]. Proposed key HKDF-SHA256(X25519 secret, salt=both nonces, info=`NLS-v1 M2`||both IDs, L=32).
 - M3: initiator_id[16], sealed_len:u16, envelope. Plaintext certificate[176]+transcript_hash[32]+key_confirm[32]. Proposed HKDF info `NLS-v1 M3`||both IDs; AAD binds M1+M2 bytes.
 - M4: sealed plaintext session_id[16]+responder_key_confirm[32]+transcript_hash[32]+status:u16=0 (82 bytes). Envelope nonce[12]+ciphertext[82]+tag[16]=110 bytes. Proposed key HKDF info `NLS-v1 confirm`||transcript hash.
