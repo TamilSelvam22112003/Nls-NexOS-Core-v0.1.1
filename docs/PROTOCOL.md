@@ -1,4 +1,6 @@
 # NLS v0.1.1 Wire Protocol — FROZEN CONTRACT
+
+**Specification revision:** v1-rc2 (pre-release; not released; wire version remains 1).
 **Version:** 1 (wire version byte `0x01`) · **Status:** Frozen subject to the Objections/Open section below · **Accepted date:** 2026-10-19
 
 This document is normative. All integers are unsigned big-endian unless stated. Fixed-size messages have exactly the stated size; parsers reject truncation, trailing bytes, duplicate fields, non-minimal lengths, unknown critical TLVs, invalid enums, and values outside stated bounds. No implicit padding except where explicitly defined. UDP messages are never fragmented by the protocol. Strings are UTF-8 NFC, no NUL, length-delimited; identifiers are opaque bytes, not strings.
@@ -14,7 +16,7 @@ Suite 1: Ed25519 signatures; X25519 ephemeral DH; HKDF-SHA256; AES-256-GCM; SHA-
 Signatures sign context || defined canonical bytes (or transcript hash where stated). No X.509 parsing occurs in the data path. One Ed25519 router key is used for RDR and handshake signatures; its X.509 certificate, issued by Router-CA, is only for TLS control-channel mTLS.
 
 ## 2. Common framing, enums, errors
-UDP datagram prefix is `version:u8(1), type:u8, flags:u16(0), body_len:u16, reserved:u16(0)` (8 bytes), followed by exactly body_len bytes. UDP payload maximum is 1452 bytes for a 1500-byte outer path MTU in v1; implementations MUST reduce the effective inner MTU for smaller paths. Unknown message type is silently dropped before state allocation. All offsets below are relative to the message body unless stated.
+Handshake UDP datagrams (M1_INIT, M1_COOKIE, M2, M3, M4) use the 8-byte common prefix `version:u8(1), type:u8, flags:u16(0), body_len:u16, reserved:u16(0)`, followed by exactly body_len bytes. Data-plane datagrams (DATA, REKEY_INIT, REKEY_ACK) use the single 32-byte header defined in §8 and MUST NOT prepend the common prefix; that header includes version, type, flags and receiver_index. The UDP payload maximum remains 1452 bytes for a 1500-byte outer IPv6 path MTU (1500 − 40-byte IPv6 header − 8-byte UDP header); implementations MUST reduce effective inner MTU for smaller paths. Unknown message types are silently dropped before state allocation. All offsets in message-body tables are relative to the body unless stated.
 
 Message type codes: 0x01 M1_INIT; 0x02 M1_COOKIE; 0x03 M2; 0x04 M3; 0x05 M4; 0x10 DATA; 0x11 REKEY_INIT; 0x12 REKEY_ACK. Control TLV type IDs: 0x0001 heartbeat, 0x0002 heartbeat_ack, 0x0010 enrollment_request, 0x0011 enrollment_response, 0x0020 policy_sync, 0x0021 policy_ack, 0x0030 revocation_push, 0x0040 directory_lookup, 0x0041 directory_response, 0x7fff error. TLV critical bit is high bit of type; unknown critical rejects the message, unknown noncritical may be skipped. Control TLV framing: type:u16, length:u32, value[length], big-endian, sorted by type ascending; duplicates forbidden.
 
@@ -69,7 +71,8 @@ Value: generation:u64, count:u32 (max 65536), then sorted unique entries router_
 Lookup value: request_id:u64, router_id[16]. Response value: request_id:u64, status:u16 (0 found, 1 unknown, 2 revoked, 3 unavailable), rdr_len:u16, rdr[rdr_len]. Online CA lookup required for every new handshake. RDR must be current, signed, status ACTIVE, and expiry valid. Cache TTL default 300s is for lookup optimization only and does not permit a new handshake without successful online freshness check.
 
 ## 5. Router Directory Record (RDR v1)
-Unsigned body 258 bytes; signature 64 bytes; total signed RDR 322 bytes. Certificate serial and validity bind the router identity to Router-CA issuance. Exactly one endpoint in v1.
+
+The unsigned RDR body is **130 bytes**; the Ed25519 signature is 64 bytes; total signed RDR size is **194 bytes**. Certificate serial and validity bind the router identity to Router-CA issuance. Exactly one endpoint in v1.
 
 | Offset | Size | Field | Encoding |
 |---:|---:|---|---|
@@ -89,10 +92,9 @@ Unsigned body 258 bytes; signature 64 bytes; total signed RDR 322 bytes. Certifi
 | 97 | 7 | reserved | all zero |
 | 104 | 8 | generation | u64 |
 | 112 | 16 | record_nonce | random |
-| 128 | 130 | reserved_extension | zero in v1 |
-| 258 | 64 | signature | Ed25519 over context || unsigned body bytes 0..257 |
+| 128 | 2 | extensions_len | u16=0 in v1; any nonzero value MUST be rejected |
 
-**Length correction:** the earlier report's 322-byte total was wrong for its earlier proposed field layout (258-byte unsigned body + 64-byte signature arithmetic was correct, but that layout's listed fields did not total 258). This frozen layout explicitly reserves 64 extension bytes: unsigned body = 258, total = 322. Verifier checks canonical fields/reserved zero, signature, validity, status, serial/cert registry binding and endpoint_count=1. Expiry and status checked before use.
+The signature occupies bytes 130..193 and is Ed25519 over `NLS-v1-RDR\0` || unsigned body bytes 0..129. The exact v1 body length is 130 bytes and exact signed record length is 194 bytes. Reject truncated or trailing bytes, nonzero reserved bytes, `extensions_len != 0`, invalid signature, invalid validity interval, invalid status, serial/certificate registry mismatch, or `endpoint_count != 1`. No extension payload is permitted in v1.
 
 ## 6. Handshake and transcript
 Pattern basis: SIGMA-I (SIGn-and-MAc / identity protection), using the published SIGMA-I construction as the design model. It is **not** claimed to be wire-compatible with Noise; deviations: (1) fixed CA-signed RDR directory lookup instead of certificate exchange in the handshake, to keep data path independent of X.509; (2) stateless cookie challenge before state allocation, to mitigate spoofed M1 DoS; (3) UDP framing and explicit four-message M1–M4 split; (4) fixed suite 1 and deterministic binary encodings. These deviations require independent cryptographic review before production. Transcript hash TH is SHA-256 of the exact concatenation of full framed messages in order, including cookie exchange, excluding retransmissions. Each message carries transcript hash of all prior canonical messages; signatures cover context || current transcript hash. Identity blobs are encrypted with handshake AEAD keys. Handshake AEAD uses AES-256-GCM, 12-byte nonce = 4 zero bytes || u64 counter 0 (handshake key is single-use); associated data = message framing || prior transcript hash.
@@ -107,7 +109,7 @@ Body 100 bytes:
 | 64 | 32 | initiator_ephemeral_x25519 | raw |
 | 96 | 2 | suite | u16=1 |
 | 98 | 2 | reserved | zero |
-Full framed M1_INIT = 108 bytes. To guarantee M1_COOKIE <= M1_INIT, M1_INIT UDP payload is padded to 128 bytes with zero padding outside body_len? **No**: framing body_len includes padding. Define body 120 bytes: fields above plus 20 zero padding bytes, so total = 128 bytes. Parser requires padding zero. Initiator retransmits exact M1 bytes. M1_INIT has no encrypted fields; unauthenticated and rate-limited. Responder validates version/length/padding/suite/IDs before generating cookie; no state allocated.
+The unpadded fields occupy the first 100 bytes of the body. Append 20 zero padding bytes to make body_len=120; the 8-byte common framing makes the full M1_INIT UDP payload 128 bytes. The body_len includes padding, and the parser MUST require every padding byte to be zero. This keeps M1_INIT larger than M1_COOKIE (60 bytes) without out-of-body padding. Parser requires padding zero. Initiator retransmits exact M1 bytes. M1_INIT has no encrypted fields; unauthenticated and rate-limited. Responder validates version/length/padding/suite/IDs before generating cookie; no state allocated.
 
 ### M1_COOKIE (0x02; responder → initiator)
 Body 52 bytes; framed size 60 bytes, less than 128-byte M1_INIT.
@@ -115,10 +117,10 @@ Body 52 bytes; framed size 60 bytes, less than 128-byte M1_INIT.
 |---:|---:|---|---|
 | 0 | 32 | initiator_nonce | echoed bytes |
 | 32 | 16 | cookie | HMAC-SHA256 truncated to 16 bytes |
-| 48 | 4 | time_bucket | u32 big-endian | Cookie = first 16 bytes HMAC-SHA256(cookie_secret, source IPv6 || source UDP port || destination IPv6 || destination UDP port || initiator_router_id || destination_router_id || initiator_nonce || time_bucket:u32). Accept current and previous 10-minute bucket. Cookie secret rotates every 10 minutes while retaining prior key for one bucket. Wrong/expired cookie silently dropped. Cookie carries no identity claims and is not signed.
+| 48 | 4 | time_bucket | u32 big-endian | Cookie = first 16 bytes HMAC-SHA256(cookie_secret, source IPv6 || source UDP port || destination IPv6 || destination UDP port || initiator_router_id || destination_router_id || initiator_nonce || time_bucket:u32). Accept only the current and immediately previous 60-second bucket. Rotate the cookie secret every 60 seconds and retain the immediately previous secret for verification of the previous bucket. Maximum accepted cookie age is less than 120 seconds. Reject all other buckets. Wrong/expired cookie silently dropped. Cookie carries no identity claims and is not signed.
 
 ### M1_INIT(cookie) (0x01; initiator → responder)
-Same 120-byte body as padded M1_INIT, cookie occupies bytes 100..115 and reserved padding bytes 116..119 are zero; add cookie_present:u8? **Wire v1 fixed layout:** byte 100 cookie_present=1, bytes 101..116 cookie[16], bytes 117..119 zero. Initial M1 has byte100=0 and bytes101..119 zero. This changes padded body to 120 bytes; total framed size 128. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
+Same 120-byte body as padded M1_INIT. Byte 100 is cookie_present:u8; it is 0 for initial M1_INIT and 1 for M1_INIT(cookie). For the cookie-bearing message, bytes 101..116 contain cookie[16] and bytes 117..119 are zero. For the initial message, bytes 101..119 are all zero. Total framed size is 128 bytes. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
 
 ### M2 (0x03; responder → initiator)
 Body 244 bytes:
@@ -131,7 +133,7 @@ Body 244 bytes:
 | 98 | 80 | encrypted_identity | AES-256-GCM ciphertext+tag |
 | 178 | 2 | signature_len | u16=64 |
 | 180 | 64 | signature | Ed25519 over context || SHA256(prior transcript || M2 fields excluding signature) |
-M2 framing adds 8 bytes; total framed M2 size is 252 bytes. The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes, encrypted to 80 bytes. Key/nonce/AD per key schedule below. Initiator validates lengths, transcript, decrypts identity, online-lookups responder RDR, verifies signature against RDR key, status and validity before proceeding. Failure sends no detailed UDP error.
+M2 framing adds 8 bytes; total framed M2 size is 252 bytes. The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + receiver_index:u32 + reserved[4] = 64 bytes, encrypted to 80 bytes. For M2, receiver_index is the responder's nonzero local receive index; for M3, it is the initiator's nonzero local receive index. The index MUST be unique among that router's active receive sessions and is carried only inside the authenticated encrypted identity. Key/nonce/AD per key schedule below. Initiator validates lengths, transcript, decrypts identity, online-lookups responder RDR, verifies signature against RDR key, status and validity before proceeding. Failure sends no detailed UDP error.
 
 ### M3 (0x04; initiator → responder)
 Body 178 bytes; framed size 186 bytes.
@@ -140,7 +142,7 @@ Body 178 bytes; framed size 186 bytes.
 | 0 | 32 | transcript_hash_prior | SHA-256 |
 | 32 | 2 | encrypted_identity_len | u16=80 |
 | 34 | 80 | encrypted_identity | AES-256-GCM ciphertext+tag |
-| 114 | 64 | signature | Ed25519 over context || SHA-256(prior transcript || M3 fields excluding signature) | Encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + reserved[8] = 64 bytes. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 186 bytes.
+| 114 | 64 | signature | Ed25519 over context || SHA-256(prior transcript || M3 fields excluding signature) | The encrypted identity plaintext is router_id[16] + RDR_generation:u64 + RDR_hash[32] + receiver_index:u32 + reserved[4] = 64 bytes, encrypted to 80 bytes. For M2, receiver_index is the responder's nonzero local receive index; for M3, it is the initiator's nonzero local receive index. The index MUST be unique among that router's active receive sessions and is carried only inside the authenticated encrypted identity. Signature is Ed25519 over context || SHA256(prior transcript || M3 fields excluding signature). Initiator must have completed online lookup of responder RDR before M3. Responder performs online lookup of initiator RDR, validates signature and decrypted identity against RDR before deriving established data keys. Framed size 186 bytes.
 
 ### M4 (0x05; responder → initiator)
 Body 64 bytes; framed size 72 bytes.
@@ -150,7 +152,7 @@ Body 64 bytes; framed size 72 bytes.
 | 32 | 32 | finish_mac | HMAC-SHA256(k_finish_responder, context || transcript_hash_prior) | Initiator verifies constant-time, then session is established. M4 has no encrypted identity; it authenticates handshake completion. Bad tag/signature/transcript silently drops and tears down tentative state.
 
 ## 7. Key schedule
-Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_INIT). Let DH1 = X25519(initiator ephemeral private, responder ephemeral public), DH2 = X25519(responder ephemeral private, initiator ephemeral public). Reject zero output. IKM = DH1 || DH2. Salt = TH0. HKDF-SHA256 extract/expand:
+Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_INIT). Let DH = X25519(initiator ephemeral private, responder ephemeral public). Reject an all-zero DH output. Both peers compute this same 32-byte shared secret; IKM is exactly DH once, never DH concatenated with a duplicate computation. Salt = TH0. HKDF-SHA256 extract/expand:
 | Output | HKDF info bytes (ASCII, exact) | Length | Use |
 |---|---|---:|---|
 | k_hs_i2r | `NLS-v1 hs i2r` || TH0 | 32 | M3 identity encryption |
@@ -162,23 +164,31 @@ Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_
 | salt_r2i | `NLS-v1 nonce r2i` || TH0 | 4 | data nonce prefix |
 HKDF-Expand is called separately for each output using the stated info; output lengths as shown. Identity encryption nonce is 12 bytes: 4 zero bytes || u64 counter 0; each handshake key is single-use. Identity encryption AAD = message type/version/framing || TH prior. Data nonce = direction_salt[4] || sequence:u64 big-endian. Never reuse a key/nonce pair. Separate per-direction keys and monotonically increasing sequence counters starting at 1.
 
-**Cryptographic objection:** the above two DH values describe the same X25519 exchange twice (each side computes the same shared secret); they are not two independent DH contributions. Implementers must set IKM to one shared DH output, not concatenate duplicate DH values. This is a necessary correction to avoid pretending there is extra entropy. The exact key schedule is therefore IKM = DH1 (32 bytes), with DH2 computed by responder as the equivalent shared secret and equality implicit. This is normative.
+X25519 is symmetric: initiator and responder independently compute the same 32-byte shared secret. IKM MUST contain that shared secret exactly once; duplicating the same value does not add entropy.
 
 ## 8. Data plane
-NLS data UDP datagram: common 8-byte framing header with type 0x10, then 32-byte NLS data header (including four reserved zero bytes), then encrypted entire inner IP packet, then 16-byte GCM tag. Data header is authenticated as AAD. Header:
+
+Each data-plane UDP datagram begins with exactly one 32-byte NLS header; the 8-byte common framing prefix is **not** present. The header is authenticated as AES-256-GCM associated data (AAD).
+
 | Offset | Size | Field | Encoding |
 |---:|---:|---|---|
 | 0 | 1 | version | u8=1 |
-| 1 | 1 | flags | u8=0 |
-| 2 | 2 | session_id | u16, nonzero |
-| 4 | 16 | session_nonce_id | random per session |
-| 20 | 8 | sequence | u64 big-endian, starts 1 |\n| 28 | 4 | reserved | all zero |
-Inner plaintext is the entire original IPv4 or IPv6 packet, including inner source/destination IP headers, transport header and payload. Outer IPv6/UDP destination is destination router WAN endpoint; outer endpoints remain visible. AAD = common framing header || NLS data header. AES-256-GCM ciphertext length equals plaintext length; tag 16 bytes. Receiver looks up session, checks session ID/nonce ID, replay window, verifies GCM tag before releasing plaintext, then validates inner IP packet and forwards. No plaintext on any failure.
+| 1 | 1 | type | u8: 0x10 DATA, 0x11 REKEY_INIT, 0x12 REKEY_ACK |
+| 2 | 2 | flags | u16=0; reject nonzero |
+| 4 | 4 | receiver_index | u32 big-endian, nonzero |
+| 8 | 16 | session_nonce_id | first 16 bytes of SHA-256(`NLS-v1 session-id\0` || TH4) |
+| 24 | 8 | sequence | u64 big-endian, starts at 1 per direction and key epoch |
 
-Replay window: 1024 sequence values per direction. Reject sequence <=0, duplicates, or values older than highest_seen-1023. Update replay window only after successful GCM authentication. At 2^32 packets or one hour initiate rekey; hard stop before sequence reaches 2^32+2^20 if rekey has not succeeded.
+`receiver_index` is allocated by the receiving router, is unique among its active receive sessions, and is communicated to its peer in the encrypted identity in M2 or M3. A sender places the peer's receiver_index in outgoing data headers; an unknown index is rejected. `session_nonce_id` is derived identically by both peers from TH4, where TH4 is SHA-256 of the concatenation of the full framed initial M1_INIT, M1_COOKIE, cookie-bearing M1_INIT, M2, M3, and M4 messages. This field is a session identifier, not a secret. The UDP datagram length determines the payload length; a separate body_len field would duplicate transport framing and is omitted.
+
+For DATA, bytes after the 32-byte header and before the final 16-byte GCM tag are the ciphertext of the entire original IPv4 or IPv6 packet, including its inner source/destination IP headers, transport header and payload. AAD is exactly the 32-byte NLS header. The outer IPv6 and UDP endpoints remain visible; the outer destination is the destination router WAN endpoint. The receiver selects the session by receiver_index, checks session_nonce_id and replay eligibility, verifies the GCM tag before releasing plaintext, then validates the inner IP packet and forwards it. No plaintext is released on any failure.
+
+Allocate receiver_index only after the cookie is validated and before emitting the corresponding M2/M3. The initiator includes its own receiver_index in M3; the responder includes its own receiver_index in M2. Neither index is used as an authentication credential; it is an opaque local session-table selector.
+
+Replay window: 1024 sequence values per direction and key epoch. Reject sequence zero, duplicates, or values older than highest_seen − 1023. Update the replay window only after successful GCM authentication. At 2^32 packets or one hour initiate rekey; hard stop before sequence reaches 2^32+2^20 if rekey has not succeeded.
 
 ## 9. Rekey
-REKEY_INIT type 0x11 and REKEY_ACK type 0x12, both use current session data key and normal data header sequence/replay protections. Each has a 32-byte data header, 132-byte body, and 16-byte tag in addition to the 8-byte common framing.
+REKEY_INIT type 0x11 and REKEY_ACK type 0x12 use the current session data key and normal data-header sequence/replay protections. Each UDP payload is exactly 32-byte data header + 132-byte encrypted rekey body + 16-byte GCM tag = 180 bytes; there is no separate 8-byte common framing prefix.
 
 REKEY_INIT body (initiator → responder):
 | Offset | Size | Field | Encoding |
@@ -197,23 +207,23 @@ REKEY_ACK body (responder → initiator):
 | 68 | 64 | signature | Ed25519, context-separated | Signature context is `NLS-v1-REKEY\0` and signs transcript hash plus epoch and ephemeral public key. Derive replacement data keys from X25519(new ephemeral private, peer ephemeral public), salt = SHA-256(old transcript hash || rekey transcript hash), info labels `NLS-v1 rekey i2r` and `NLS-v1 rekey r2i` (32 bytes each) and fresh 4-byte salts. New epoch must be current+1; retransmit identical message on timeout, max 3 attempts over 3 seconds. Switch atomically after authenticated ACK; old keys accepted for 3 seconds only for in-flight packets. If rekey fails and CA unreachable, terminate session and drop PROTECT traffic; if peer is revoked, terminate immediately and erase keys. Re-handshake requires online CA lookup.
 
 ## 10. Sizes and MTU arithmetic
-- Earlier report said initial M1 fields total 100 bytes and plus 16 cookie = 116 bytes; this was incomplete because it omitted padding and cookie-presence framing. Frozen body is 120 bytes, UDP protocol framing is 8 bytes, so both initial and cookie-bearing M1 are 128 bytes. M1_COOKIE body 52 + framing 8 = 60 bytes and is smaller than M1.
-- RDR: fixed unsigned body 258 bytes + Ed25519 signature 64 = 322 bytes.
-- NLS overhead excluding common protocol framing ambiguity: outer IPv6 40 + UDP 8 + common NLS framing 8 + data header 32 + GCM tag 16 = 104 bytes. For WAN MTU 1500, TUN MTU = 1500 − 104 = 1396 bytes. TCP MSS: inner IPv4 1396 − 20 IPv4 − 20 TCP = 1356; inner IPv6 1396 − 40 IPv6 − 20 TCP = 1336. These assume no IPv6 extension headers and standard TCP headers; reduce further for options/extensions or lower path MTU.
+
+- M1_INIT and cookie-bearing M1_INIT: 120-byte body + 8-byte common framing = 128 bytes each. M1_COOKIE: 52-byte body + 8-byte common framing = 60 bytes.
+- RDR: 130-byte unsigned body + 64-byte Ed25519 signature = **194 bytes**.
+- M2: 244-byte body + 8-byte framing = 252 bytes. M3: 178-byte body + 8-byte framing = 186 bytes. M4: 64-byte body + 8-byte framing = 72 bytes.
+- DATA outer overhead is IPv6 40 + UDP 8 + NLS header 32 + GCM tag 16 = **96 bytes**. The 8-byte common framing is not present on data-plane datagrams. For WAN MTU 1500: TUN MTU = 1500 − 96 = **1404 bytes**. TCP MSS for inner IPv4 = 1404 − 20-byte IPv4 header − 20-byte TCP header = **1364 bytes**. TCP MSS for inner IPv6 = 1404 − 40-byte IPv6 header − 20-byte TCP header = **1344 bytes**. These assume no IPv6 extension headers and standard TCP headers; reduce further for options/extensions or lower path MTU.
+- REKEY_INIT and REKEY_ACK: 32-byte NLS header + 132-byte encrypted body + 16-byte GCM tag = **180 bytes** UDP payload.
 
 ## 11. Validation order and state machine
 Initiator: BOOT → ENROLLING → ENROLLED → CONTROL_UP → SESSION_HANDSHAKING → SESSION_ESTABLISHED. Any revoked state → REVOKED; unrecoverable parse/credential/config failure → FAILED. Handshake: send padded M1_INIT; wait M1_COOKIE up to 1s (retry up to 3, exact same M1); validate cookie response nonce/source; send cookie M1; wait M2 up to 3s; validate frame/version/length, transcript, encrypted identity/tag, online RDR lookup, RDR status/expiry, signature; send M3; wait M4 up to 3s; validate transcript and finish MAC; then switch to real WAN endpoint and remove vIP. Total handshake timeout 10s; remove vIP on success or timeout.
 Responder: drop malformed/unknown versions; validate M1 structural fields and rate limits; issue stateless cookie; on cookie-bearing M1 validate cookie before allocating state; generate ephemeral key and M2; await M3 up to 3s; online lookup source RDR; validate transcript, decrypt identity, RDR binding and signature; derive session and send M4; only then accept data. Any failure destroys tentative keys/state. vIP inbound UDP allowed only on handshake port; DAD before use. vIP is random 64-bit interface ID inside routed WAN IPv6 prefix; IPv4-only WAN unsupported.
 
 ## 12. Configuration defaults and status
-RDR cache TTL 300 seconds (cache alone never authorizes new handshake); revocation push teardown deadline 30 seconds; control-loss session drop threshold 300 seconds; cookie bucket 600 seconds; replay window 1024; rekey 2^32 packets or 1 hour; hard stop 2^32+2^20; handshake total timeout 10 seconds. All three freshness values (RDR TTL, revocation teardown deadline, control-loss threshold) configurable with these defaults.
+RDR cache TTL 300 seconds (cache alone never authorizes new handshake); revocation push teardown deadline 30 seconds; control-loss session drop threshold 300 seconds; cookie bucket 60 seconds; replay window 1024; rekey 2^32 packets or 1 hour; hard stop 2^32+2^20; handshake total timeout 10 seconds. All three freshness values (RDR TTL, revocation teardown deadline, control-loss threshold) configurable with these defaults.
 
 Router status: 1 ACTIVE, 2 REVOKED, 3 DISABLED. Enrollment status: 1 ISSUED, 2 REJECTED. Policy action: 1 PROTECT, 2 BYPASS. Address family: 4 IPv4, 6 IPv6. Lookup status: 0 FOUND, 1 UNKNOWN, 2 REVOKED, 3 UNAVAILABLE. Policy ACK status: 0 ACCEPTED, 1 REJECTED. Reserved bits/bytes must be zero.
 
 ## Objections / Open
-1. **Blocking security review:** SIGMA-I is a published protocol family, but this bespoke binary realization is not a formally verified SIGMA-I or Noise implementation. Independent cryptographic protocol review and test vectors are required before implementation is considered production safe. Proposed default: implement only after review signs off.
-2. **RDR layout accounting:** the extension reserve is intentionally explicit to make the 258-byte unsigned body match the 322-byte signed total; owner should confirm whether the 64-byte zero reserve is wanted. Proposed default: keep it for v1 forward compatibility.
-3. **Rekey signature key binding:** rekey signatures use the session's authenticated router Ed25519 identity keys; wire needs explicit router ID fields if implementations cannot unambiguously bind session direction. Proposed default: bind IDs from established session state.
-4. **Control policy overlap:** conflicting PROTECT/BYPASS prefixes are rejected unless longest-prefix match yields an unambiguous winner. Proposed default: longest-prefix match; equal-prefix conflicts reject the entire sync.
-5. **Admin key encryption parameters:** argon2id parameters and encrypted export container need a versioned format and resource caps. Proposed default: memory 64 MiB, iterations 3, parallelism 1; export AES-256-GCM with authenticated metadata.
-6. CA rotation and multi-node HA are explicitly out of scope for v0.1.1.
+
+1. **Blocking security review:** this bespoke SIGMA-I-inspired binary protocol is not a formally verified SIGMA-I or Noise implementation. Independent cryptographic protocol review remains mandatory before production; the implementation must be marked experimental.
+2. **Pre-release v1-rc2 corrections:** the RDR extension length, data-plane single-header framing, receiver-index semantics, session nonce derivation, 60-second cookie buckets, and updated MTU/MSS arithmetic are documented in SPEC_ERRATA.md. These corrections are pre-release; no v1.0 release has occurred.

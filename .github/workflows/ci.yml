@@ -13,6 +13,10 @@ jobs:
         with:
           go-version: '1.22.x'
           cache: true
-      - run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
       - run: make fmt
-      - run: make build test lint
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          args: ./...
+          only-new-issues: false
+      - run: make build test
