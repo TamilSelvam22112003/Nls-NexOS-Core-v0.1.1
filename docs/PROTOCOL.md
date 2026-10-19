@@ -120,7 +120,7 @@ Body 52 bytes; framed size 60 bytes, less than 128-byte M1_INIT.
 | 48 | 4 | time_bucket | u32 big-endian | Cookie = first 16 bytes HMAC-SHA256(cookie_secret, source IPv6 || source UDP port || destination IPv6 || destination UDP port || initiator_router_id || destination_router_id || initiator_nonce || time_bucket:u32). Accept only the current and immediately previous 60-second bucket. Rotate the cookie secret every 60 seconds and retain the immediately previous secret for verification of the previous bucket. Maximum accepted cookie age is less than 120 seconds. Reject all other buckets. Wrong/expired cookie silently dropped. Cookie carries no identity claims and is not signed.
 
 ### M1_INIT(cookie) (0x01; initiator → responder)
-Same 120-byte body as padded M1_INIT, cookie occupies bytes 100..115 and reserved padding bytes 116..119 are zero; add cookie_present:u8? **Wire v1 fixed layout:** byte 100 cookie_present=1, bytes 101..116 cookie[16], bytes 117..119 zero. Initial M1 has byte100=0 and bytes101..119 zero. This changes padded body to 120 bytes; total framed size 128. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
+Same 120-byte body as padded M1_INIT. Byte 100 is cookie_present:u8; it is 0 for initial M1_INIT and 1 for M1_INIT(cookie). For the cookie-bearing message, bytes 101..116 contain cookie[16] and bytes 117..119 are zero. For the initial message, bytes 101..119 are all zero. Total framed size is 128 bytes. Cookie HMAC proves source address reachability only, not identity. Responder validates cookie before allocating bounded state.
 
 ### M2 (0x03; responder → initiator)
 Body 244 bytes:
@@ -152,7 +152,7 @@ Body 64 bytes; framed size 72 bytes.
 | 32 | 32 | finish_mac | HMAC-SHA256(k_finish_responder, context || transcript_hash_prior) | Initiator verifies constant-time, then session is established. M4 has no encrypted identity; it authenticates handshake completion. Bad tag/signature/transcript silently drops and tears down tentative state.
 
 ## 7. Key schedule
-Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_INIT). Let DH1 = X25519(initiator ephemeral private, responder ephemeral public), DH2 = X25519(responder ephemeral private, initiator ephemeral public). Reject zero output. IKM = DH1 || DH2. Salt = TH0. HKDF-SHA256 extract/expand:
+Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_INIT). Let DH = X25519(initiator ephemeral private, responder ephemeral public). Reject an all-zero DH output. Both peers compute this same 32-byte shared secret; IKM is exactly DH once, never DH concatenated with a duplicate computation. Salt = TH0. HKDF-SHA256 extract/expand:
 | Output | HKDF info bytes (ASCII, exact) | Length | Use |
 |---|---|---:|---|
 | k_hs_i2r | `NLS-v1 hs i2r` || TH0 | 32 | M3 identity encryption |
@@ -164,7 +164,7 @@ Let TH0 = SHA-256(full padded initial M1_INIT || M1_COOKIE || cookie-bearing M1_
 | salt_r2i | `NLS-v1 nonce r2i` || TH0 | 4 | data nonce prefix |
 HKDF-Expand is called separately for each output using the stated info; output lengths as shown. Identity encryption nonce is 12 bytes: 4 zero bytes || u64 counter 0; each handshake key is single-use. Identity encryption AAD = message type/version/framing || TH prior. Data nonce = direction_salt[4] || sequence:u64 big-endian. Never reuse a key/nonce pair. Separate per-direction keys and monotonically increasing sequence counters starting at 1.
 
-**Cryptographic objection:** the above two DH values describe the same X25519 exchange twice (each side computes the same shared secret); they are not two independent DH contributions. Implementers must set IKM to one shared DH output, not concatenate duplicate DH values. This is a necessary correction to avoid pretending there is extra entropy. The exact key schedule is therefore IKM = DH1 (32 bytes), with DH2 computed by responder as the equivalent shared secret and equality implicit. This is normative.
+X25519 is symmetric: initiator and responder independently compute the same 32-byte shared secret. IKM MUST contain that shared secret exactly once; duplicating the same value does not add entropy.
 
 ## 8. Data plane
 

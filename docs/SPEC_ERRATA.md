@@ -31,3 +31,7 @@
 **Affected:** PROTOCOL.md §§5, 8–10.
 **Correction:** Signed RDR is 194 bytes. M1_INIT and cookie-bearing M1_INIT remain 128 bytes; M1_COOKIE 60 bytes; M2 252 bytes; M3 186 bytes; M4 72 bytes. REKEY_INIT and REKEY_ACK each occupy a 180-byte UDP payload (32-byte header + 132-byte encrypted body + 16-byte tag).
 **Reason:** Keep every published wire-size and MTU calculation consistent with the corrected layouts.
+## E-007 — Canonical M1 cookie offsets and single X25519 input
+**Affected:** PROTOCOL.md §§6–7.
+**Correction:** In M1_INIT(cookie), byte 100 is cookie_present, bytes 101..116 carry cookie[16], and bytes 117..119 are zero; the initial M1 uses byte 100 = 0 and bytes 101..119 = 0. The key schedule IKM is the single 32-byte X25519 shared secret, not two concatenated computations of the same secret.
+**Reason:** Remove contradictory cookie offsets and prevent implementers from interpreting a duplicated shared secret as two independent DH contributions.
