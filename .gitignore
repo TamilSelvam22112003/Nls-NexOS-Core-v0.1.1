@@ -1,0 +1,12 @@
+bin/
+dist/
+coverage.out
+*.test
+*.prof
+.env
+*.key
+*.pem
+*.crt
+*.db
+.idea/
+.vscode/
