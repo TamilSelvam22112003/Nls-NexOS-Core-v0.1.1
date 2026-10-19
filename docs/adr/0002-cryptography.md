@@ -1,6 +1,7 @@
 # ADR-0002: Cryptographic suite
-- Status: Proposed.
-- Decision: Ed25519, X25519, HKDF-SHA256, AES-256-GCM; Go stdlib and x/crypto only where needed.
-- Rationale: standard reviewed primitives, no custom crypto.
-- Alternative rejected: RSA key exchange or home-grown suite, for complexity and attack surface.
-- Consequence: fixed suite 1, domain separation, transcript binding and nonce uniqueness mandatory.
+- Status: Accepted
+- Date: 2026-10-19
+- Decision: Ed25519, X25519, HKDF-SHA256 and AES-256-GCM; Go stdlib and x/crypto only where needed.
+- Rationale: reviewed standard primitives and no custom crypto.
+- Alternative rejected: custom primitives or larger suite complexity.
+- Consequence: suite 1 fixed; transcript binding and nonce uniqueness mandatory. See PROTOCOL.md §§1,7.
