@@ -15,4 +15,15 @@ jobs:
           cache: true
       - run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
       - run: make fmt
-      - run: make build test lint
+      - run: make build
+      - name: Validate shell scripts
+        run: |
+          bash -n scripts/install-ca.sh
+          sh -n scripts/nls-ca-admin
+          sh -n scripts/nls-ca-init
+          sh -n scripts/nls-ca-status
+      - name: Verify static binary
+        run: |
+          file bin/nls-core
+          file bin/nls-core | grep -q 'statically linked'
+      - run: make test lint
