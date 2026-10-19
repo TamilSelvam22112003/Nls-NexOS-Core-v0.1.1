@@ -60,14 +60,17 @@ func (s Store) IssueEnrollment(passphrase, name, token string, csrDER []byte) (I
 
 	st, caKey, err := s.load(passphrase)
 	if err != nil { return out, err }
-	if st.Enrollment == nil || st.Enrollment.Name != name {
-		return out, ErrBadCredential
-	}
-	cred := st.Enrollment
 	rawToken, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil { return out, ErrBadCredential }
 	tokenSum := sha256.Sum256(rawToken)
-	if !equalHex(tokenSum[:], cred.TokenSHA256) { return out, ErrBadCredential }
+	credentialHash := hex.EncodeToString(tokenSum[:])
+	credential, found := st.EnrollmentCredentials[credentialHash]
+	if !found && st.Enrollment != nil && equalHex(tokenSum[:], st.Enrollment.TokenSHA256) {
+		credential = *st.Enrollment
+		found = true
+	}
+	if !found || !equalHex(tokenSum[:], credential.TokenSHA256) || credential.Name != name { return out, ErrBadCredential }
+	cred := &credential
 	if cred.Used { return out, ErrTokenReused }
 	if !time.Now().UTC().Before(cred.ExpiresAt) { return out, ErrTokenExpired }
 	if !st.Access.Configured || !st.Access.AllowEnrollment || !st.Policy.Configured {
@@ -134,7 +137,10 @@ func (s Store) IssueEnrollment(passphrase, name, token string, csrDER []byte) (I
 	binary.BigEndian.PutUint64(body[104:112], st.RevocationGeneration+1)
 	if _, err = rand.Read(body[112:128]); err != nil { return out, err }
 	rdr := signRDR(caKey, body)
-	st.Enrollment.Used = true
+	cred.Used = true
+	if st.EnrollmentCredentials == nil { st.EnrollmentCredentials = map[string]EnrollmentCredential{} }
+	st.EnrollmentCredentials[cred.TokenSHA256] = *cred
+	if st.Enrollment != nil && st.Enrollment.TokenSHA256 == cred.TokenSHA256 { st.Enrollment = cred }
 	st.RevocationGeneration++
 	st.ControlEpoch++
 	now := time.Now().UTC()

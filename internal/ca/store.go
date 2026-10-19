@@ -105,6 +105,7 @@ type State struct {
 	Routers map[string]RouterRecord `json:"routers"`
 	Revocations map[string]RevocationRecord `json:"revocations"`
 	Enrollment *EnrollmentCredential `json:"enrollment,omitempty"`
+	EnrollmentCredentials map[string]EnrollmentCredential `json:"enrollment_credentials,omitempty"`
 	Policy Policy `json:"policy"`
 	Access AccessControls `json:"access_controls"`
 	CreatedAt time.Time `json:"created_at"`
@@ -127,7 +128,7 @@ func (s Store) Init(passphrase string) error {
 		Version: formatV1, CAID: hex.EncodeToString(fp[:]),
 		PublicKey: base64.StdEncoding.EncodeToString(pub),
 		TrustRegistry: map[string]string{hex.EncodeToString(fp[:]): base64.StdEncoding.EncodeToString(pub)},
-		Routers: map[string]RouterRecord{}, Revocations: map[string]RevocationRecord{},
+		Routers: map[string]RouterRecord{}, Revocations: map[string]RevocationRecord{}, EnrollmentCredentials: map[string]EnrollmentCredential{},
 		Policy: Policy{ProtectPrefixes: []string{}, BypassPrefixes: []string{}},
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -145,8 +146,8 @@ func (s Store) Status(passphrase string) (string, error) {
 	st, _, err := s.load(passphrase)
 	if err != nil { return "not ready: " + err.Error(), err }
 	if err = validateState(st); err != nil { return "not ready: " + err.Error(), err }
-	if st.Enrollment == nil || st.Enrollment.Used || st.Enrollment.PublicKeySHA256 == "" || st.Enrollment.EndpointIPv6 == "" || st.Enrollment.EndpointUDPPort == 0 || !time.Now().UTC().Before(st.Enrollment.ExpiresAt) {
-		err = errors.New("no valid unused enrollment credential")
+	if !hasReadyCredential(st, time.Now().UTC()) {
+		err = errors.New("no valid unused key-bound enrollment credential")
 		return "not ready: " + err.Error(), err
 	}
 	if !st.Access.Configured || !st.Access.AllowEnrollment {
@@ -181,7 +182,10 @@ func (s Store) SetScopedEnrollmentCredential(passphrase, name, publicKeySHA256, 
 	token := make([]byte, 32)
 	if _, err = rand.Read(token); err != nil { return "", err }
 	sum := sha256.Sum256(token)
-	st.Enrollment = &EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), PublicKeySHA256:strings.ToLower(publicKeySHA256), EndpointIPv6:endpointIPv6, EndpointUDPPort:port, ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
+	credential := EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), PublicKeySHA256:strings.ToLower(publicKeySHA256), EndpointIPv6:endpointIPv6, EndpointUDPPort:port, ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
+	if st.EnrollmentCredentials == nil { st.EnrollmentCredentials = map[string]EnrollmentCredential{} }
+	st.EnrollmentCredentials[credential.TokenSHA256] = credential
+	st.Enrollment = &credential
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return "", err }
 	if err = s.saveState(st); err != nil { return "", err }
@@ -297,18 +301,38 @@ func validateState(st State) error {
 	}
 	if st.Access.Configured && (st.Access.MaxActiveRouters < 1 || st.Access.MaxActiveRouters > 1_000_000) { return errors.New("invalid access-control router limit") }
 	if st.Enrollment != nil {
-		if err := validateName(st.Enrollment.Name); err != nil { return err }
-		if len(st.Enrollment.TokenSHA256) != sha256.Size*2 { return errors.New("invalid enrollment token hash") }
-		if _, err := hex.DecodeString(st.Enrollment.TokenSHA256); err != nil { return errors.New("invalid enrollment token hash") }
-		if st.Enrollment.ExpiresAt.IsZero() { return errors.New("invalid enrollment expiry") }
-		if st.Enrollment.PublicKeySHA256 != "" {
-			if len(st.Enrollment.PublicKeySHA256) != sha256.Size*2 { return errors.New("invalid enrollment public-key hash") }
-			if _, err := hex.DecodeString(st.Enrollment.PublicKeySHA256); err != nil { return errors.New("invalid enrollment public-key hash") }
-			addr, err := netip.ParseAddr(st.Enrollment.EndpointIPv6)
-			if err != nil || !addr.Is6() || addr.Is4In6() || st.Enrollment.EndpointUDPPort == 0 { return errors.New("invalid enrollment endpoint") }
-		}
+		if err := validateCredential(*st.Enrollment); err != nil { return err }
+	}
+	for hash, credential := range st.EnrollmentCredentials {
+		if hash != credential.TokenSHA256 { return errors.New("enrollment credential key/hash mismatch") }
+		if err := validateCredential(credential); err != nil { return err }
 	}
 	return nil
+}
+
+func validateCredential(credential EnrollmentCredential) error {
+	if err := validateName(credential.Name); err != nil { return err }
+	if len(credential.TokenSHA256) != sha256.Size*2 { return errors.New("invalid enrollment token hash") }
+	if _, err := hex.DecodeString(credential.TokenSHA256); err != nil { return errors.New("invalid enrollment token hash") }
+	if credential.ExpiresAt.IsZero() { return errors.New("invalid enrollment expiry") }
+	if credential.PublicKeySHA256 != "" {
+		if len(credential.PublicKeySHA256) != sha256.Size*2 { return errors.New("invalid enrollment public-key hash") }
+		if _, err := hex.DecodeString(credential.PublicKeySHA256); err != nil { return errors.New("invalid enrollment public-key hash") }
+		addr, err := netip.ParseAddr(credential.EndpointIPv6)
+		if err != nil || !addr.Is6() || addr.Is4In6() || credential.EndpointUDPPort == 0 { return errors.New("invalid enrollment endpoint") }
+	}
+	return nil
+}
+
+func hasReadyCredential(st State, now time.Time) bool {
+	for _, credential := range st.EnrollmentCredentials {
+		if !credential.Used && credential.PublicKeySHA256 != "" && credential.EndpointIPv6 != "" && credential.EndpointUDPPort != 0 && now.Before(credential.ExpiresAt) { return true }
+	}
+	if st.Enrollment != nil {
+		credential := st.Enrollment
+		return !credential.Used && credential.PublicKeySHA256 != "" && credential.EndpointIPv6 != "" && credential.EndpointUDPPort != 0 && now.Before(credential.ExpiresAt)
+	}
+	return false
 }
 
 func canonicalPrefixes(protect, bypass []string) (Policy, error) {

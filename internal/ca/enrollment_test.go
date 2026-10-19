@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"crypto/x509/pkix"
 	"bytes"
 	"encoding/pem"
@@ -150,4 +151,30 @@ func TestCredentialTokenHashNotPersistedAsToken(t *testing.T) {
 	raw,err:=os.ReadFile(filepath.Join(s.Dir,stateFile));if err!=nil{t.Fatal(err)}
 	if bytes.Contains(raw,[]byte(token)){t.Fatal("token leaked to state")}
 	if !bytes.Contains(raw,[]byte(base64.StdEncoding.EncodeToString([]byte("dummy")))) && len(raw)==0 {t.Fatal("state unexpectedly empty")}
+}
+
+func TestMultipleScopedCredentialsCanEnrollIndependentRouters(t *testing.T) {
+	store := readyStore(t)
+	_, csrA, hashA := makeCSR(t, "router-multi-a")
+	_, csrB, hashB := makeCSR(t, "router-multi-b")
+	tokenA, err := store.SetScopedEnrollmentCredential(testPassphrase, "router-multi-a", hashA, "2001:db8::21", 52001, time.Minute)
+	if err != nil { t.Fatal(err) }
+	tokenB, err := store.SetScopedEnrollmentCredential(testPassphrase, "router-multi-b", hashB, "2001:db8::22", 52002, time.Minute)
+	if err != nil { t.Fatal(err) }
+	a, err := store.IssueEnrollment(testPassphrase, "router-multi-a", tokenA, csrA)
+	if err != nil { t.Fatal(err) }
+	b, err := store.IssueEnrollment(testPassphrase, "router-multi-b", tokenB, csrB)
+	if err != nil { t.Fatal(err) }
+	state, err := store.LoadState(testPassphrase)
+	if err != nil { t.Fatal(err) }
+	if len(state.Routers) != 2 { t.Fatalf("router count=%d, want 2", len(state.Routers)) }
+	if !state.EnrollmentCredentials[tokenHash(tokenA)].Used { t.Fatal("first credential not consumed") }
+	if !state.EnrollmentCredentials[tokenHash(tokenB)].Used { t.Fatal("second credential not consumed") }
+	if a.RouterID == b.RouterID { t.Fatal("router IDs collided") }
+}
+
+func tokenHash(token string) string {
+	raw, _ := base64.RawURLEncoding.DecodeString(token)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
