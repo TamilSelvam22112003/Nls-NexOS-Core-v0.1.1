@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -56,6 +57,8 @@ func run(args []string) error {
 		return serve(args[1:], false)
 	case "revoke-router":
 		return commandRevoke(args[1:])
+	case "list-routers":
+		return commandListRouters(args[1:])
 	case "export-ca-cert":
 		return commandExportCACert(args[1:])
 	case "status":
@@ -148,6 +151,28 @@ func serve(args []string, isEnrollment bool) error {
 	return svc.ServeControl(ctx,*listen)
 }
 
+
+func commandListRouters(args []string) error {
+	fs := flag.NewFlagSet("list-routers", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	dir := fs.String("dir", "/var/lib/nls-ca", "CA state directory")
+	if err := fs.Parse(args); err != nil { return err }
+	if fs.NArg() != 0 { return fmt.Errorf("unexpected positional arguments") }
+	pass, err := passphrase()
+	if err != nil { return err }
+	st, err := (ca.Store{Dir:*dir}).LoadState(pass)
+	if err != nil { return err }
+	ids := make([]string, 0, len(st.Routers))
+	for id := range st.Routers { ids = append(ids, id) }
+	sort.Strings(ids)
+	fmt.Println("ROUTER_ID\tNAME\tSTATUS\tSERIAL\tENDPOINT")
+	for _, id := range ids {
+		r := st.Routers[id]
+		fmt.Printf("%s\t%s\t%s\t%d\t[%s]:%d\n", id, r.Name, r.Status, r.CertificateSerial, r.EndpointIPv6, r.EndpointUDPPort)
+	}
+	return nil
+}
+
 func commandRevoke(args []string) error {
 	fs:=flag.NewFlagSet("revoke-router",flag.ContinueOnError);fs.SetOutput(os.Stderr)
 	dir:=fs.String("dir","/var/lib/nls-ca","CA state directory")
@@ -206,6 +231,7 @@ Usage:
   nls-core status [--dir DIR]
   nls-core serve-enrollment [--listen :8443] [--tls-name ca.example] [--dir DIR]
   nls-core serve-control [--listen :8444] [--tls-name ca.example] [--dir DIR]
+  nls-core list-routers [--dir DIR]
   nls-core revoke-router --router-id HEX32 --reason TEXT [--dir DIR]
   nls-core export-ca-cert --tls-name ca.example --out ca-cert.pem [--dir DIR]
 
