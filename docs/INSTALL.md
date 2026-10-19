@@ -22,7 +22,7 @@ ldd bin/nls-core
 ```sh
 sudo apt-get update
 sudo apt-get install -y golang-go make openssl
-sudo ./scripts/install-ca.sh install
+sudo bash ./scripts/install-ca.sh install
 sudo systemctl start nls-ca-init.service
 sudo systemctl start nls-ca-status.service
 ```
@@ -47,7 +47,7 @@ The enrollment token is displayed once by the CLI. Transfer it to the intended r
 ## Uninstall
 
 ```sh
-sudo ./scripts/install-ca.sh uninstall
+sudo bash ./scripts/install-ca.sh uninstall
 ```
 
-Uninstall removes the CLI, wrappers, and units but preserves configuration and CA state. To destroy them too, explicitly run `sudo PURGE_NLS_CA=1 ./scripts/install-ca.sh uninstall`. This deletes CA key material and is irreversible; back up and verify the backup before purging.
+Uninstall removes the CLI, wrappers, and units but preserves configuration and CA state. To destroy them too, explicitly run `sudo env PURGE_NLS_CA=1 bash ./scripts/install-ca.sh uninstall`. This deletes CA key material and is irreversible; back up and verify the backup before purging.
