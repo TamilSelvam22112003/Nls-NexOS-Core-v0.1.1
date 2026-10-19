@@ -108,6 +108,8 @@ func (s Service) handleControl(conn net.Conn) {
 			lastRev:=binary.BigEndian.Uint64(value[24:32])
 			if requestID==0||senderTime==0||epoch==0 { return }
 			if err=s.Store.RecordControlHeartbeat(s.Passphrase,routerID,epoch);err!=nil{return}
+			currentState,stateErr:=s.Store.LoadState(s.Passphrase)
+			if stateErr!=nil||lastRev>currentState.RevocationGeneration{return}
 			ack:=append([]byte(nil),value...)
 			ack=appendU64(ack,uint64(nowMillis()))
 			if err=writeTLV(tlsConn,TLVHeartbeatAck,ack);err!=nil{return}
