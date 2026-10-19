@@ -37,9 +37,9 @@ if ! id nls-ca >/dev/null 2>&1; then
 fi
 install -d -o nls-ca -g nls-ca -m 0700 "$STATE_DIR"
 install -o root -g root -m 0755 "$ROOT_DIR/bin/nls-core" "$PREFIX/sbin/nls-core"
-install -o root -g root -m 0750 "$ROOT_DIR/scripts/nls-ca-admin" "$PREFIX/libexec/nls-ca-admin"
-install -o root -g root -m 0750 "$ROOT_DIR/scripts/nls-ca-init" "$PREFIX/libexec/nls-ca-init"
-install -o root -g root -m 0750 "$ROOT_DIR/scripts/nls-ca-status" "$PREFIX/libexec/nls-ca-status"
+install -o root -g nls-ca -m 0750 "$ROOT_DIR/scripts/nls-ca-admin" "$PREFIX/libexec/nls-ca-admin"
+install -o root -g nls-ca -m 0750 "$ROOT_DIR/scripts/nls-ca-init" "$PREFIX/libexec/nls-ca-init"
+install -o root -g nls-ca -m 0750 "$ROOT_DIR/scripts/nls-ca-status" "$PREFIX/libexec/nls-ca-status"
 install -o root -g root -m 0644 "$ROOT_DIR/systemd/nls-ca-init.service" "$UNIT_DIR/nls-ca-init.service"
 install -o root -g root -m 0644 "$ROOT_DIR/systemd/nls-ca-status.service" "$UNIT_DIR/nls-ca-status.service"
 if [[ ! -e "$CONFIG_DIR/ca.env" ]]; then
