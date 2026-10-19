@@ -54,6 +54,9 @@ type encryptedKey struct {
 type EnrollmentCredential struct {
 	Name string `json:"name"`
 	TokenSHA256 string `json:"token_sha256"`
+	PublicKeySHA256 string `json:"public_key_sha256"`
+	EndpointIPv6 string `json:"endpoint_ipv6"`
+	EndpointUDPPort uint16 `json:"endpoint_udp_port"`
 	ExpiresAt time.Time `json:"expires_at"`
 	Used bool `json:"used"`
 }
@@ -62,6 +65,12 @@ type RouterRecord struct {
 	RouterID string `json:"router_id"`
 	Name string `json:"name"`
 	PublicKey string `json:"public_key"`
+	CertificateDER string `json:"certificate_der,omitempty"`
+	CertificateSerial uint64 `json:"certificate_serial,omitempty"`
+	LastControlEpoch uint64 `json:"last_control_epoch,omitempty"`
+	RDR string `json:"rdr,omitempty"`
+	EndpointIPv6 string `json:"endpoint_ipv6,omitempty"`
+	EndpointUDPPort uint16 `json:"endpoint_udp_port,omitempty"`
 	Status string `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -83,16 +92,21 @@ type AccessControls struct {
 	Configured bool `json:"configured"`
 	AllowEnrollment bool `json:"allow_enrollment"`
 	MaxActiveRouters int `json:"max_active_routers"`
+	MaxClockSkewSeconds int `json:"max_clock_skew_seconds"`
 }
 
 type State struct {
 	Version int `json:"version"`
+	PolicyGeneration uint64 `json:"policy_generation"`
+	RevocationGeneration uint64 `json:"revocation_generation"`
+	ControlEpoch uint64 `json:"control_epoch"`
 	CAID string `json:"ca_id"`
 	PublicKey string `json:"public_key_ed25519"`
 	TrustRegistry map[string]string `json:"trust_registry"`
 	Routers map[string]RouterRecord `json:"routers"`
 	Revocations map[string]RevocationRecord `json:"revocations"`
 	Enrollment *EnrollmentCredential `json:"enrollment,omitempty"`
+	EnrollmentCredentials map[string]EnrollmentCredential `json:"enrollment_credentials,omitempty"`
 	Policy Policy `json:"policy"`
 	Access AccessControls `json:"access_controls"`
 	CreatedAt time.Time `json:"created_at"`
@@ -115,7 +129,7 @@ func (s Store) Init(passphrase string) error {
 		Version: formatV1, CAID: hex.EncodeToString(fp[:]),
 		PublicKey: base64.StdEncoding.EncodeToString(pub),
 		TrustRegistry: map[string]string{hex.EncodeToString(fp[:]): base64.StdEncoding.EncodeToString(pub)},
-		Routers: map[string]RouterRecord{}, Revocations: map[string]RevocationRecord{},
+		Routers: map[string]RouterRecord{}, Revocations: map[string]RevocationRecord{}, EnrollmentCredentials: map[string]EnrollmentCredential{},
 		Policy: Policy{ProtectPrefixes: []string{}, BypassPrefixes: []string{}},
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -133,8 +147,8 @@ func (s Store) Status(passphrase string) (string, error) {
 	st, _, err := s.load(passphrase)
 	if err != nil { return "not ready: " + err.Error(), err }
 	if err = validateState(st); err != nil { return "not ready: " + err.Error(), err }
-	if st.Enrollment == nil || st.Enrollment.Used || !time.Now().UTC().Before(st.Enrollment.ExpiresAt) {
-		err = errors.New("no valid unused enrollment credential")
+	if !hasReadyCredential(st, time.Now().UTC()) {
+		err = errors.New("no valid unused key-bound enrollment credential")
 		return "not ready: " + err.Error(), err
 	}
 	if !st.Access.Configured || !st.Access.AllowEnrollment {
@@ -149,14 +163,30 @@ func (s Store) Status(passphrase string) (string, error) {
 }
 
 func (s Store) SetEnrollmentCredential(passphrase, name string, ttl time.Duration) (string, error) {
+	return s.SetScopedEnrollmentCredential(passphrase, name, "", "", 0, ttl)
+}
+
+// SetScopedEnrollmentCredential binds a one-time token to the router public key and IPv6 UDP endpoint.
+func (s Store) SetScopedEnrollmentCredential(passphrase, name, publicKeySHA256, endpointIPv6 string, port uint16, ttl time.Duration) (string, error) {
+	unlock, err := s.lock(); if err != nil { return "", err }; defer unlock()
 	if err := validateName(name); err != nil { return "", err }
 	if ttl <= 0 || ttl > maxTokenTTL { return "", fmt.Errorf("TTL must be greater than zero and at most %s", maxTokenTTL) }
+	if publicKeySHA256 != "" {
+		if len(publicKeySHA256) != sha256.Size*2 { return "", errors.New("public-key SHA-256 must be 64 hexadecimal characters") }
+		if _, err := hex.DecodeString(publicKeySHA256); err != nil { return "", errors.New("public-key SHA-256 must be hexadecimal") }
+		addr, err := netip.ParseAddr(endpointIPv6)
+		if err != nil || !addr.Is6() || addr.Is4In6() { return "", errors.New("endpoint must be a valid IPv6 address") }
+		if port == 0 { return "", errors.New("UDP endpoint port must be 1..65535") }
+	}
 	st, _, err := s.load(passphrase)
 	if err != nil { return "", err }
 	token := make([]byte, 32)
 	if _, err = rand.Read(token); err != nil { return "", err }
 	sum := sha256.Sum256(token)
-	st.Enrollment = &EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
+	credential := EnrollmentCredential{Name:name, TokenSHA256:hex.EncodeToString(sum[:]), PublicKeySHA256:strings.ToLower(publicKeySHA256), EndpointIPv6:endpointIPv6, EndpointUDPPort:port, ExpiresAt:time.Now().UTC().Add(ttl), Used:false}
+	if st.EnrollmentCredentials == nil { st.EnrollmentCredentials = map[string]EnrollmentCredential{} }
+	st.EnrollmentCredentials[credential.TokenSHA256] = credential
+	st.Enrollment = &credential
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return "", err }
 	if err = s.saveState(st); err != nil { return "", err }
@@ -164,21 +194,24 @@ func (s Store) SetEnrollmentCredential(passphrase, name string, ttl time.Duratio
 }
 
 func (s Store) SetPolicy(passphrase string, protect, bypass []string) error {
+	unlock, err := s.lock(); if err != nil { return err }; defer unlock()
 	st, _, err := s.load(passphrase)
 	if err != nil { return err }
 	p, err := canonicalPrefixes(protect, bypass)
 	if err != nil { return err }
 	st.Policy = p
+	st.PolicyGeneration++
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return err }
 	return s.saveState(st)
 }
 
 func (s Store) SetAccessControls(passphrase string, allow bool, maxRouters int) error {
+	unlock, err := s.lock(); if err != nil { return err }; defer unlock()
 	if maxRouters < 1 || maxRouters > 1_000_000 { return errors.New("max active routers must be in range 1..1000000") }
 	st, _, err := s.load(passphrase)
 	if err != nil { return err }
-	st.Access = AccessControls{Configured:true, AllowEnrollment:allow, MaxActiveRouters:maxRouters}
+	st.Access = AccessControls{Configured:true, AllowEnrollment:allow, MaxActiveRouters:maxRouters, MaxClockSkewSeconds:300}
 	st.UpdatedAt = time.Now().UTC()
 	if err = validateState(st); err != nil { return err }
 	return s.saveState(st)
@@ -201,6 +234,7 @@ func (s Store) load(passphrase string) (State, ed25519.PrivateKey, error) {
 		if errors.Is(err, os.ErrNotExist) { return st, nil, ErrNotInitialized }
 		return st, nil, fmt.Errorf("read CA state: %w", err)
 	}
+	if st.Access.Configured && st.Access.MaxClockSkewSeconds == 0 { st.Access.MaxClockSkewSeconds = 300 }
 	if err := readJSON(s.path(keyFile), &enc); err != nil {
 		return st, nil, fmt.Errorf("read encrypted CA key: %w", err)
 	}
@@ -267,14 +301,40 @@ func validateState(st State) error {
 		if len(st.Policy.ProtectPrefixes)+len(st.Policy.BypassPrefixes) == 0 { return errors.New("configured policy has no prefixes") }
 		if _, err := canonicalPrefixes(st.Policy.ProtectPrefixes, st.Policy.BypassPrefixes); err != nil { return fmt.Errorf("invalid policy: %w", err) }
 	}
-	if st.Access.Configured && (st.Access.MaxActiveRouters < 1 || st.Access.MaxActiveRouters > 1_000_000) { return errors.New("invalid access-control router limit") }
+	if st.Access.Configured && (st.Access.MaxActiveRouters < 1 || st.Access.MaxActiveRouters > 1_000_000 || st.Access.MaxClockSkewSeconds < 1 || st.Access.MaxClockSkewSeconds > 3600) { return errors.New("invalid access-control router limit or clock skew") }
 	if st.Enrollment != nil {
-		if err := validateName(st.Enrollment.Name); err != nil { return err }
-		if len(st.Enrollment.TokenSHA256) != sha256.Size*2 { return errors.New("invalid enrollment token hash") }
-		if _, err := hex.DecodeString(st.Enrollment.TokenSHA256); err != nil { return errors.New("invalid enrollment token hash") }
-		if st.Enrollment.ExpiresAt.IsZero() { return errors.New("invalid enrollment expiry") }
+		if err := validateCredential(*st.Enrollment); err != nil { return err }
+	}
+	for hash, credential := range st.EnrollmentCredentials {
+		if hash != credential.TokenSHA256 { return errors.New("enrollment credential key/hash mismatch") }
+		if err := validateCredential(credential); err != nil { return err }
 	}
 	return nil
+}
+
+func validateCredential(credential EnrollmentCredential) error {
+	if err := validateName(credential.Name); err != nil { return err }
+	if len(credential.TokenSHA256) != sha256.Size*2 { return errors.New("invalid enrollment token hash") }
+	if _, err := hex.DecodeString(credential.TokenSHA256); err != nil { return errors.New("invalid enrollment token hash") }
+	if credential.ExpiresAt.IsZero() { return errors.New("invalid enrollment expiry") }
+	if credential.PublicKeySHA256 != "" {
+		if len(credential.PublicKeySHA256) != sha256.Size*2 { return errors.New("invalid enrollment public-key hash") }
+		if _, err := hex.DecodeString(credential.PublicKeySHA256); err != nil { return errors.New("invalid enrollment public-key hash") }
+		addr, err := netip.ParseAddr(credential.EndpointIPv6)
+		if err != nil || !addr.Is6() || addr.Is4In6() || credential.EndpointUDPPort == 0 { return errors.New("invalid enrollment endpoint") }
+	}
+	return nil
+}
+
+func hasReadyCredential(st State, now time.Time) bool {
+	for _, credential := range st.EnrollmentCredentials {
+		if !credential.Used && credential.PublicKeySHA256 != "" && credential.EndpointIPv6 != "" && credential.EndpointUDPPort != 0 && now.Before(credential.ExpiresAt) { return true }
+	}
+	if st.Enrollment != nil {
+		credential := st.Enrollment
+		return !credential.Used && credential.PublicKeySHA256 != "" && credential.EndpointIPv6 != "" && credential.EndpointUDPPort != 0 && now.Before(credential.ExpiresAt)
+	}
+	return false
 }
 
 func canonicalPrefixes(protect, bypass []string) (Policy, error) {
@@ -297,6 +357,15 @@ func canonicalPrefixes(protect, bypass []string) (Policy, error) {
 	if err != nil { return Policy{}, err }
 	b, err := canon(bypass, "BYPASS")
 	if err != nil { return Policy{}, err }
+	for _, protectPrefix := range p {
+		pp, _ := netip.ParsePrefix(protectPrefix)
+		for _, bypassPrefix := range b {
+			bp, _ := netip.ParsePrefix(bypassPrefix)
+			if pp.Contains(bp.Addr()) || bp.Contains(pp.Addr()) {
+				return Policy{}, fmt.Errorf("conflicting overlapping PROTECT/BYPASS prefixes %s and %s", pp, bp)
+			}
+		}
+	}
 	if len(p)+len(b) == 0 { return Policy{}, errors.New("at least one PROTECT or BYPASS prefix is required") }
 	return Policy{Configured:true, ProtectPrefixes:p, BypassPrefixes:b}, nil
 }
