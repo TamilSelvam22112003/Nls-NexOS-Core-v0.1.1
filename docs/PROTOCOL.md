@@ -89,7 +89,7 @@ Unsigned body 258 bytes; signature 64 bytes; total signed RDR 322 bytes. Certifi
 | 97 | 7 | reserved | all zero |
 | 104 | 8 | generation | u64 |
 | 112 | 16 | record_nonce | random |
-| 128 | 66 | reserved_extension | zero in v1 |
+| 128 | 130 | reserved_extension | zero in v1 |
 | 258 | 64 | signature | Ed25519 over context || unsigned body bytes 0..257 |
 
 **Length correction:** the earlier report's 322-byte total was wrong for its earlier proposed field layout (258-byte unsigned body + 64-byte signature arithmetic was correct, but that layout's listed fields did not total 258). This frozen layout explicitly reserves 64 extension bytes: unsigned body = 258, total = 322. Verifier checks canonical fields/reserved zero, signature, validity, status, serial/cert registry binding and endpoint_count=1. Expiry and status checked before use.
