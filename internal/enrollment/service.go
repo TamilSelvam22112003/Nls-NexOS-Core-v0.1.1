@@ -117,9 +117,13 @@ func (s Service) handleControl(conn net.Conn) {
 			if err=writeTLV(tlsConn,TLVPolicySync,policy);err!=nil{return}
 			revocations,e:=s.Store.RevocationPushValue(s.Passphrase);if e!=nil{return}
 			if err=writeTLV(tlsConn,TLVRevocationPush,revocations);err!=nil{return}
-			for _,expected:=range []uint16{TLVPolicyAck,TLVPolicyAck} {
+			policyGeneration:=binary.BigEndian.Uint64(policy[:8])
+			revocationGeneration:=binary.BigEndian.Uint64(revocations[:8])
+			for i,expected:=range []uint16{TLVPolicyAck,TLVPolicyAck} {
 				ackType,ackValue,e:=readTLV(tlsConn,64);if e!=nil||ackType!=expected||len(ackValue)!=12{return}
-				if binary.BigEndian.Uint16(ackValue[8:10])!=0{return}
+				expectedGeneration:=policyGeneration
+				if i==1{expectedGeneration=revocationGeneration}
+				if binary.BigEndian.Uint64(ackValue[:8])!=expectedGeneration||binary.BigEndian.Uint16(ackValue[8:10])!=0||binary.BigEndian.Uint16(ackValue[10:12])!=0{return}
 			}
 		case TLVDirectoryLookup:
 			if len(value)!=24{return}

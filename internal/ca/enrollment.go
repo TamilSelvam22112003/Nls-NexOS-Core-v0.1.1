@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -324,7 +325,7 @@ func signRDR(key ed25519.PrivateKey, body []byte) []byte {
 
 func equalHex(value []byte, expected string) bool {
 	decoded,err:=hex.DecodeString(expected)
-	return err==nil&&len(decoded)==len(value)&&bytes.Equal(decoded,value)
+	return err==nil&&len(decoded)==len(value)&&subtle.ConstantTimeCompare(decoded,value)==1
 }
 
 func randomUint64() (uint64,error) {
