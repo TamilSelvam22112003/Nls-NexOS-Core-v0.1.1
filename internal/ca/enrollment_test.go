@@ -54,7 +54,7 @@ func TestValidEnrollmentIssuesCertificateAndSignedRDR(t *testing.T) {
 	issued,_,token:=enrollTestRouter(t,s,"router-a",10*time.Minute)
 	if len(issued.CertificateDER)==0||len(issued.RDR)!=rdrSize||issued.RouterID==""||issued.Serial==0{t.Fatalf("incomplete issuance: %#v",issued)}
 	rootPEM,err:=s.RootCertificatePEM(testPassphrase,"localhost");if err!=nil{t.Fatal(err)}
-	block,_:=pemDecode(rootPEM);if block==nil{t.Fatal("missing CA certificate")}
+	block,pemErr:=pemDecode(rootPEM);if pemErr!=nil{t.Fatal(pemErr)}
 	root,err:=x509.ParseCertificate(block);if err!=nil{t.Fatal(err)}
 	cert,err:=x509.ParseCertificate(issued.CertificateDER);if err!=nil{t.Fatal(err)}
 	roots:=x509.NewCertPool();roots.AddCert(root)
@@ -168,13 +168,15 @@ func TestMultipleScopedCredentialsCanEnrollIndependentRouters(t *testing.T) {
 	state, err := store.LoadState(testPassphrase)
 	if err != nil { t.Fatal(err) }
 	if len(state.Routers) != 2 { t.Fatalf("router count=%d, want 2", len(state.Routers)) }
-	if !state.EnrollmentCredentials[tokenHash(tokenA)].Used { t.Fatal("first credential not consumed") }
-	if !state.EnrollmentCredentials[tokenHash(tokenB)].Used { t.Fatal("second credential not consumed") }
+	if !state.EnrollmentCredentials[tokenHash(t,tokenA)].Used { t.Fatal("first credential not consumed") }
+	if !state.EnrollmentCredentials[tokenHash(t,tokenB)].Used { t.Fatal("second credential not consumed") }
 	if a.RouterID == b.RouterID { t.Fatal("router IDs collided") }
 }
 
-func tokenHash(token string) string {
-	raw, _ := base64.RawURLEncoding.DecodeString(token)
+func tokenHash(t *testing.T, token string) string {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil { t.Fatal(err) }
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
