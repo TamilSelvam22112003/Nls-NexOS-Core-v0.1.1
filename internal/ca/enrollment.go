@@ -183,6 +183,24 @@ func (s Store) RevokeRouter(passphrase, routerID, reason string) error {
 	return s.saveState(st)
 }
 
+func (s Store) RecordControlHeartbeat(passphrase, routerID string, epoch uint64) error {
+	if epoch == 0 { return errors.New("invalid control epoch") }
+	unlock, err := s.lock()
+	if err != nil { return err }
+	defer unlock()
+	st, _, err := s.load(passphrase)
+	if err != nil { return err }
+	router, ok := st.Routers[routerID]
+	if !ok { return ErrUnknownRouter }
+	if router.Status != "ACTIVE" { return ErrRevoked }
+	if epoch <= router.LastControlEpoch { return errors.New("stale control epoch") }
+	router.LastControlEpoch = epoch
+	router.UpdatedAt = time.Now().UTC()
+	st.Routers[routerID] = router
+	st.UpdatedAt = router.UpdatedAt
+	return s.saveState(st)
+}
+
 func (s Store) LookupRDR(passphrase, routerID string) ([]byte, uint16, error) {
 	st, _, err := s.load(passphrase)
 	if err != nil { return nil, 3, err }

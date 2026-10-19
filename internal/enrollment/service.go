@@ -107,7 +107,7 @@ func (s Service) handleControl(conn net.Conn) {
 			epoch:=binary.BigEndian.Uint64(value[16:24])
 			lastRev:=binary.BigEndian.Uint64(value[24:32])
 			if requestID==0||senderTime==0||epoch==0 { return }
-			_ = lastRev
+			if err=s.Store.RecordControlHeartbeat(s.Passphrase,routerID,epoch);err!=nil{return}
 			ack:=append([]byte(nil),value...)
 			ack=appendU64(ack,uint64(nowMillis()))
 			if err=writeTLV(tlsConn,TLVHeartbeatAck,ack);err!=nil{return}
@@ -180,11 +180,11 @@ func writeTLV(w io.Writer,typ uint16,value []byte)error {
 	header:=make([]byte,6)
 	binary.BigEndian.PutUint16(header[:2],typ)
 	binary.BigEndian.PutUint32(header[2:],uint32(len(value)))
-	if _,err:=w.Write(header);err!=nil{return err}
-	_,err:=w.Write(value)
-	return err
+	if err:=writeFull(w,header);err!=nil{return err}
+	return writeFull(w,value)
 }
 
+func writeFull(w io.Writer,b []byte)error { for len(b)>0 { n,err:=w.Write(b);if err!=nil{return err};if n==0{return io.ErrShortWrite};b=b[n:] };return nil }
 func errorCode(err error)uint16 {
 	switch {
 	case errors.Is(err,ca.ErrBadCredential):return 0x0003

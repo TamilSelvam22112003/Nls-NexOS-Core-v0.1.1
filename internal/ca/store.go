@@ -67,6 +67,7 @@ type RouterRecord struct {
 	PublicKey string `json:"public_key"`
 	CertificateDER string `json:"certificate_der,omitempty"`
 	CertificateSerial uint64 `json:"certificate_serial,omitempty"`
+	LastControlEpoch uint64 `json:"last_control_epoch,omitempty"`
 	RDR string `json:"rdr,omitempty"`
 	EndpointIPv6 string `json:"endpoint_ipv6,omitempty"`
 	EndpointUDPPort uint16 `json:"endpoint_udp_port,omitempty"`
@@ -165,6 +166,7 @@ func (s Store) SetEnrollmentCredential(passphrase, name string, ttl time.Duratio
 
 // SetScopedEnrollmentCredential binds a one-time token to the router public key and IPv6 UDP endpoint.
 func (s Store) SetScopedEnrollmentCredential(passphrase, name, publicKeySHA256, endpointIPv6 string, port uint16, ttl time.Duration) (string, error) {
+	unlock, err := s.lock(); if err != nil { return "", err }; defer unlock()
 	if err := validateName(name); err != nil { return "", err }
 	if ttl <= 0 || ttl > maxTokenTTL { return "", fmt.Errorf("TTL must be greater than zero and at most %s", maxTokenTTL) }
 	if publicKeySHA256 != "" {
@@ -187,6 +189,7 @@ func (s Store) SetScopedEnrollmentCredential(passphrase, name, publicKeySHA256, 
 }
 
 func (s Store) SetPolicy(passphrase string, protect, bypass []string) error {
+	unlock, err := s.lock(); if err != nil { return err }; defer unlock()
 	st, _, err := s.load(passphrase)
 	if err != nil { return err }
 	p, err := canonicalPrefixes(protect, bypass)
@@ -199,6 +202,7 @@ func (s Store) SetPolicy(passphrase string, protect, bypass []string) error {
 }
 
 func (s Store) SetAccessControls(passphrase string, allow bool, maxRouters int) error {
+	unlock, err := s.lock(); if err != nil { return err }; defer unlock()
 	if maxRouters < 1 || maxRouters > 1_000_000 { return errors.New("max active routers must be in range 1..1000000") }
 	st, _, err := s.load(passphrase)
 	if err != nil { return err }
@@ -327,6 +331,15 @@ func canonicalPrefixes(protect, bypass []string) (Policy, error) {
 	if err != nil { return Policy{}, err }
 	b, err := canon(bypass, "BYPASS")
 	if err != nil { return Policy{}, err }
+	for _, protectPrefix := range p {
+		pp, _ := netip.ParsePrefix(protectPrefix)
+		for _, bypassPrefix := range b {
+			bp, _ := netip.ParsePrefix(bypassPrefix)
+			if pp.Contains(bp.Addr()) || bp.Contains(pp.Addr()) {
+				return Policy{}, fmt.Errorf("conflicting overlapping PROTECT/BYPASS prefixes %s and %s", pp, bp)
+			}
+		}
+	}
 	if len(p)+len(b) == 0 { return Policy{}, errors.New("at least one PROTECT or BYPASS prefix is required") }
 	return Policy{Configured:true, ProtectPrefixes:p, BypassPrefixes:b}, nil
 }
