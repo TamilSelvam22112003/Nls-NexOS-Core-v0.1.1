@@ -27,3 +27,17 @@ jobs:
           file bin/nls-core
           file bin/nls-core | grep -q 'statically linked'
       - run: make test lint
+      - name: Install/uninstall smoke test (Ubuntu 22.04 runner)
+        run: |
+          sudo env PATH="$PATH" bash scripts/install-ca.sh install
+          test -x /usr/local/sbin/nls-core
+          test -f /etc/nls-ca/ca.env
+          test -f /etc/systemd/system/nls-ca-init.service
+          test -f /etc/systemd/system/nls-ca-status.service
+          sudo bash scripts/install-ca.sh uninstall
+          test ! -e /usr/local/sbin/nls-core
+          test -d /etc/nls-ca
+          test -d /var/lib/nls-ca
+          sudo env PURGE_NLS_CA=1 bash scripts/install-ca.sh uninstall
+          test ! -e /etc/nls-ca
+          test ! -e /var/lib/nls-ca
