@@ -2,6 +2,7 @@ GO ?= go
 BINARY ?= nls-core
 .PHONY: build test lint fmt
 build:
+	mkdir -p bin
 	$(GO) build -trimpath -ldflags="-s -w" -o bin/$(BINARY) ./cmd/...
 test:
 	$(GO) test ./...
