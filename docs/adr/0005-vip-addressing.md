@@ -1,6 +1,7 @@
 # ADR-0005: Temporary vIP
-- Status: Proposed.
-- Decision: temporary IPv6 address from router's own routed WAN prefix; bind to WAN and use as M1 outer source. IPv4-only WAN unsupported in v0.1.1.
-- Rationale: destination needs a routable return path for M2.
+- Status: Accepted
+- Date: 2026-10-19
+- Decision: random 64-bit interface ID inside router's routed WAN IPv6 prefix; duplicate address detection before use; inbound UDP to vIP allowed only on handshake port; remove after success or 10s timeout. IPv4-only WAN unsupported.
+- Rationale: routable M2 return path and bounded temporary address lifetime.
 - Alternative rejected: arbitrary unrouteable address.
-- Consequence: define prefix delegation, DAD, collision, firewall and cleanup behavior; remove only after authenticated M4.
+- Consequence: prefix routing, DAD and firewall rules are prerequisites. See PROTOCOL.md §11.
