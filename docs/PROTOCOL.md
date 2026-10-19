@@ -109,7 +109,7 @@ Body 100 bytes:
 | 64 | 32 | initiator_ephemeral_x25519 | raw |
 | 96 | 2 | suite | u16=1 |
 | 98 | 2 | reserved | zero |
-Full framed M1_INIT = 108 bytes. To guarantee M1_COOKIE <= M1_INIT, M1_INIT UDP payload is padded to 128 bytes with zero padding outside body_len? **No**: framing body_len includes padding. Define body 120 bytes: fields above plus 20 zero padding bytes, so total = 128 bytes. Parser requires padding zero. Initiator retransmits exact M1 bytes. M1_INIT has no encrypted fields; unauthenticated and rate-limited. Responder validates version/length/padding/suite/IDs before generating cookie; no state allocated.
+The unpadded fields occupy the first 100 bytes of the body. Append 20 zero padding bytes to make body_len=120; the 8-byte common framing makes the full M1_INIT UDP payload 128 bytes. The body_len includes padding, and the parser MUST require every padding byte to be zero. This keeps M1_INIT larger than M1_COOKIE (60 bytes) without out-of-body padding. Parser requires padding zero. Initiator retransmits exact M1 bytes. M1_INIT has no encrypted fields; unauthenticated and rate-limited. Responder validates version/length/padding/suite/IDs before generating cookie; no state allocated.
 
 ### M1_COOKIE (0x02; responder → initiator)
 Body 52 bytes; framed size 60 bytes, less than 128-byte M1_INIT.
