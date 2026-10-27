@@ -23,7 +23,7 @@ const (
 	v2HopPlaintextKindIP    = 1
 	v2HopIdentitySize       = 32
 	v2HopLocatorSize        = 16
-	v2HopPlaintextFixedSize = 1 + 2 + v2HopIdentitySize + 2 + v2HopLocatorSize + 4
+	v2HopPlaintextFixedSize = 1 + 2 + v2HopIdentitySize + 2 + v2HopLocatorSize + 2 + 16 + 4
 )
 
 var (
@@ -60,6 +60,9 @@ type OuterTuple struct {
 type HopPlaintext struct {
 	PreviousHopIdentity [32]byte
 	PreviousHopLocator  netip.Addr
+	// RouteToken is an opaque destination/path handle resolved by the receiver's
+	// authenticated local forwarding table. It is not a destination IP or identity.
+	RouteToken          [16]byte
 	InnerEnvelope       []byte
 }
 
@@ -307,7 +310,7 @@ func MarshalHopPlaintext(value HopPlaintext, maxInnerEnvelope uint32) ([]byte, e
 	if allZero(value.PreviousHopIdentity[:]) ||
 		!value.PreviousHopLocator.Is6() || value.PreviousHopLocator.Is4In6() ||
 		value.PreviousHopLocator.IsUnspecified() || value.PreviousHopLocator.IsMulticast() ||
-		value.PreviousHopLocator.IsLoopback() || value.PreviousHopLocator != LogicalLocatorForIdentity(value.PreviousHopIdentity) || len(value.InnerEnvelope) == 0 ||
+		value.PreviousHopLocator.IsLoopback() || value.PreviousHopLocator != LogicalLocatorForIdentity(value.PreviousHopIdentity) || allZero(value.RouteToken[:]) || len(value.InnerEnvelope) == 0 ||
 		uint64(len(value.InnerEnvelope)) > uint64(^uint32(0)) {
 		return nil, ErrV2HopPlaintext
 	}
@@ -327,6 +330,10 @@ func MarshalHopPlaintext(value HopPlaintext, maxInnerEnvelope uint32) ([]byte, e
 	locator := value.PreviousHopLocator.As16()
 	copy(out[offset:offset+v2HopLocatorSize], locator[:])
 	offset += v2HopLocatorSize
+	binary.BigEndian.PutUint16(out[offset:offset+2], 16)
+	offset += 2
+	copy(out[offset:offset+16], value.RouteToken[:])
+	offset += 16
 	binary.BigEndian.PutUint32(out[offset:offset+4], uint32(len(value.InnerEnvelope)))
 	offset += 4
 	copy(out[offset:], value.InnerEnvelope)
@@ -357,6 +364,15 @@ func ParseHopPlaintext(raw []byte, maxInnerEnvelope uint32) (HopPlaintext, error
 	if !value.PreviousHopLocator.Is6() || value.PreviousHopLocator.Is4In6() ||
 		value.PreviousHopLocator.IsUnspecified() || value.PreviousHopLocator.IsMulticast() ||
 		value.PreviousHopLocator.IsLoopback() || value.PreviousHopLocator != LogicalLocatorForIdentity(value.PreviousHopIdentity) {
+		return HopPlaintext{}, ErrV2HopPlaintext
+	}
+	offset += 16
+	if binary.BigEndian.Uint16(raw[offset:offset+2]) != 16 {
+		return HopPlaintext{}, ErrV2HopPlaintext
+	}
+	offset += 2
+	copy(value.RouteToken[:], raw[offset:offset+16])
+	if allZero(value.RouteToken[:]) {
 		return HopPlaintext{}, ErrV2HopPlaintext
 	}
 	offset += 16
