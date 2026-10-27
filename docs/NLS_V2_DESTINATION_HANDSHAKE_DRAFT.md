@@ -16,7 +16,7 @@ Required TLVs, in exact ascending order:
 - 0x8011 e2e_session_id: 16 random bytes, nonzero; must be unique among active sessions at both endpoints.
 - 0x8012 initiator_router_id: 32-byte identity fingerprint.
 - 0x8013 responder_router_id: 32-byte identity fingerprint.
-- 0x8014 initiator_certificate_chain: uint32 count followed by DER certificates, leaf first; total at most 4 KiB.
+- 0x8014 initiator_certificate_chain: uint32 count followed by repeated uint32 certificate_length plus exact DER certificate bytes, leaf first; lengths must be nonzero and bounded, total at most 4 KiB.
 - 0x8015 initiator_status_object: exactly 304 bytes.
 - 0x8016 nonce_i: 32 fresh CSPRNG bytes.
 - 0x8017 ephemeral_x25519_i: 32-byte X25519 public key.
@@ -37,11 +37,11 @@ Required TLVs:
 - 0x8027 selected_suite: exactly 0x0001 as a two-byte value.
 - 0x8028 responder_signature: exactly 64-byte Ed25519 signature.
 
-D_RESP signature input is ASCII NLS2-E2E-HS-SIG, one zero byte, followed by the exact encoded D_INIT record and the canonical D_RESP control prefix/TLVs excluding responder_signature. The responder signs only after validating the initiator certificate, status, role, signature, and session-ID collision state. The initiator validates the responder chain/status/role, identity, selected suite, and signature before deriving keys. Unsupported suite, identity mismatch, stale/revoked status, or any signature failure aborts the exchange.
+D_RESP signature input is ASCII NLS2-E2E-HS-SIG, one zero byte, uint32_be(length of D_INIT), exact encoded D_INIT, uint32_be(length of D_RESP without signature), then the canonical D_RESP control prefix/TLVs excluding responder_signature. The responder signs only after validating the initiator certificate, status, role, signature, and session-ID collision state. The initiator validates the responder chain/status/role, identity, selected suite, and signature before deriving keys. Unsupported suite, identity mismatch, stale/revoked status, or any signature failure aborts the exchange.
 
 ## 4. Transcript and key derivation
 
-Let transcript_hash be SHA-256 of ASCII NLS2-E2E-TRANSCRIPT, one zero byte, the exact encoded D_INIT record, and the exact encoded D_RESP record including signatures. No outer IPv6/UDP fields are included.
+Let transcript_hash be SHA-256 of ASCII NLS2-E2E-TRANSCRIPT, one zero byte, uint32_be(length of D_INIT), exact encoded D_INIT, uint32_be(length of D_RESP), and exact encoded D_RESP including signatures. No outer IPv6/UDP fields are included.
 
 Both endpoints compute X25519(ephemeral_private_local, ephemeral_public_peer) and reject an all-zero shared secret. Let salt be SHA-256 of ASCII NLS2-E2E-HS-SALT, one zero byte, nonce_i, nonce_r, and transcript_hash. HKDF-SHA-256 uses the X25519 shared secret as input keying material. Derive 32-byte keys with these exact info labels:
 - NLS2 E2E initiator-to-responder handshake key v1
@@ -55,7 +55,7 @@ Keys are separate from adjacent-hop keys and from one another. Data keys must no
 
 Encrypted finish records use a fixed 24-byte header: message_type (1 byte), flags (1 byte zero), reserved (2 bytes zero), e2e_session_id (16 bytes), ciphertext_length (4 bytes, includes the 16-byte GCM tag). The exact 24-byte header is AEAD associated data. The nonce for each directional handshake key is uint32_be(0) concatenated with uint64_be(0); each key is used for only one logical finish plaintext, and retransmission must resend identical bytes.
 
-D_FINISH_I (0x13) uses the initiator-to-responder handshake key and contains transcript_hash (32 bytes) plus initiator_status_generation (8-byte unsigned integer). D_FINISH_R (0x14) uses the responder-to-initiator handshake key and contains transcript_hash (32 bytes), responder_status_generation (8-byte unsigned integer), and session_lifetime_seconds (4-byte unsigned integer). The decrypted plaintext length is exact; no trailing bytes are allowed.
+D_FINISH_I (0x13) uses the initiator-to-responder handshake key and contains transcript_hash (32 bytes) plus initiator_status_generation (8-byte unsigned integer). D_FINISH_R (0x14) uses the responder-to-initiator handshake key and contains transcript_hash (32 bytes), responder_status_generation (8-byte unsigned integer), and session_lifetime_seconds (4-byte unsigned integer). The decrypted plaintext length is exact; no trailing bytes are allowed. Each finish status_generation must equal the generation in that endpoint's validated signed status object.
 
 The responder installs the session only after D_FINISH_I AEAD and transcript validation succeed and after its D_FINISH_R bytes are committed to the bounded retransmission cache. The initiator installs the session only after D_FINISH_R AEAD and transcript validation succeed. Duplicate finish records are idempotent and must not create duplicate sessions. A mismatched session ID, transcript, status generation, or lifetime outside local policy aborts activation.
 
