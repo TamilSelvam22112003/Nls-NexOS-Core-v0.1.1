@@ -35,6 +35,14 @@ func loadDestinationEnvelopeVector(t *testing.T) destinationEnvelopeVector {
 	return v
 }
 
+func hasExactDestinationEnvelopeLength(envelope []byte) bool {
+	if len(envelope) < 72 {
+		return false
+	}
+	declared := int(binary.BigEndian.Uint32(envelope[68:72]))
+	return len(envelope) == 72+declared
+}
+
 func TestDestinationEnvelopeAES256GCM001(t *testing.T) {
 	v := loadDestinationEnvelopeVector(t)
 	key := decodeHex(t, v.KeyHex)
@@ -95,7 +103,11 @@ func TestDestinationEnvelopeAES256GCM001(t *testing.T) {
 		t.Fatal("altered recipient fingerprint in AAD was accepted")
 	}
 
-	if len(append(append([]byte(nil), envelope...), 0)) == v.ExpectedTotalLength {
-		t.Fatal("appended byte was not reflected in exact-length check")
+	if !hasExactDestinationEnvelopeLength(envelope) {
+		t.Fatal("valid envelope length check failed")
+	}
+	appended := append(append([]byte(nil), envelope...), 0)
+	if hasExactDestinationEnvelopeLength(appended) {
+		t.Fatal("envelope with an appended byte passed exact-length check")
 	}
 }
