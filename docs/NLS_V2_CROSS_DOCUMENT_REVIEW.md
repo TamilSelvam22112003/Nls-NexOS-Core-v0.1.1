@@ -16,15 +16,15 @@ The endpoint-binding field encoded an IPv6 endpoint and router fingerprint but d
 
 **Resolution:** RESP's endpoint_binding identifies the responder's advertised receiving WAN endpoint: IPv6 address, NLS UDP port, and responder identity fingerprint. It must match the endpoint authorized by the responder certificate/status evidence and the actual responder destination endpoint selected by the initiator. The signed outer tuple separately binds the observed packet direction. Initiator endpoint authorization is checked against the initiator's certificate/status evidence and the outer source tuple in FINISH_I.
 
-### F-03 — Destination-protection profile is not specified (blocking)
-The data-plane draft carries a destination-protected inner envelope but does not define its exact bytes, recipient identity binding, key establishment, authentication, replay policy, or how the final endpoint distinguishes it from arbitrary inner bytes.
+### F-03 — Destination protection is drafted but not yet interoperable (blocking)
+The 72-byte N2DE envelope and its AES-256-GCM AAD/nonce/replay rules are defined in `NLS_V2_DESTINATION_PROTECTION_PROFILE.md`. The source-to-destination D_INIT/D_RESP/D_FINISH handshake is separately drafted in `NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md`; it binds both identities, certificates, status generations, ephemeral X25519 keys, transcript, and directional keys.
 
-**Disposition:** do not implement or claim end-to-end destination protection until a separate normative profile and vectors exist. Transit relays must not be given the destination private key.
+**Disposition:** envelope bytes now have a cross-language Go/Python vector, but the destination handshake does not yet have complete shared byte-exact vectors. Keep destination protection disabled in runtime until those vectors, lifecycle rules, and independent review pass. Transit relays must never receive destination traffic keys.
 
-### F-04 — Router-CA status evidence is structurally underspecified (blocking)
-The handshake draft lists required status fields but leaves canonical serialization and signature envelope to Core. Without exact bytes and signature scope, independent implementations cannot validate the same status object.
+### F-04 — Router-CA status profile is specified as a candidate (high; implementation gate remains)
+`ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md` defines a fixed 304-byte N2ST object, exact signature input, endpoint slots, freshness/generation rules, certificate binding, clock rollback policy, and a v2 status-push proposal over the negotiated mTLS control channel. A synthetic positive vector is checked by Go and Python.
 
-**Disposition:** Core must define a canonical encoding, algorithm/domain separation, certificate/status binding, freshness rules, generation monotonicity, and revocation semantics before handshake implementation is considered interoperable.
+**Disposition:** the byte-level candidate is no longer structurally open, but X.509 path/issuance integration, sidecar registry mapping, control capability negotiation, revocation delivery, and real-CA integration tests remain required before implementation can be accepted.
 
 ### F-05 — Key-update/restart lifecycle is incomplete (blocking for long-lived sessions)
 KEY_UPDATE is reserved. Re-establishment is required before sequence exhaustion or any restart that could repeat a nonce, but no persistent sequence/key-state algorithm or operational restart invariant is specified.
@@ -36,16 +36,17 @@ The TUN/socket shim carries NLS data but does not automatically protect native O
 
 **Disposition:** preserve the existing wording: shim-first; no claim that routing daemons or application protocols are secured unless a tested integration actually carries/protects them.
 
-### F-07 — Canonical signature and transcript test vectors are absent (blocking)
-The current signature input and transcript hash are specified textually but no independently reproducible byte-level examples prove agreement on TLV serialization, message headers, endpoint tuple order, signature exclusion, transcript input, HKDF outputs, AAD, and nonces.
+### F-07 — Handshake transcript vectors remain incomplete (blocking)
+The status-object and destination data-envelope fixtures now have cross-language checks, but byte-exact vectors for the adjacent-hop handshake and destination endpoint D_INIT/D_RESP/D_FINISH transcript, signatures, HKDF outputs, cookies, and finish AAD/nonces are still absent.
 
-**Disposition:** use `NLS_V2_CRYPTO_VECTORS_PLAN.md` as the vector-generation checklist. No interoperability claim until both repositories run identical positive and negative vectors.
+**Disposition:** use `NLS_V2_CRYPTO_VECTORS_PLAN.md` as the checklist. No interoperability claim until both repositories consume the same fixtures and the complete positive/negative handshake suite passes.
 
 ## Release gates
 
-1. Resolve F-03 through F-05 in normative documents.
-2. Generate and commit shared byte-exact vectors for every message and crypto boundary.
-3. Implement the shared codec/status-validation primitives in Core only after contract review.
+1. Review/freeze the candidate destination envelope, destination handshake, and Router-CA status profiles; preserve v1 unchanged.
+2. Generate shared byte-exact adjacent-hop and destination-handshake vectors, including cookies, signatures, transcript, HKDF, finish AEAD, and negative cases.
+3. Complete key-update/restart/nonce lifecycle decisions and independent review.
+4. Implement shared codec/status-validation primitives in Core only after contract review.
 4. Implement NetOS session and packet handling against the same vectors.
 5. Pass unit/property/fuzz tests, then the six-node functional lab and ten-router IPv6/FRR lab. Keep performance gates separate.
 6. Obtain independent cryptographic/protocol review before production claims.
