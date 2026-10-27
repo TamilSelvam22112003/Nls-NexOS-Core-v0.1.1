@@ -37,7 +37,7 @@ The rest of the control payload is a sequence of TLVs:
 
 TLVs MUST be strictly ascending by their full 16-bit type value. Duplicate types, out-of-order types, truncated TLVs, arithmetic overflow, fields exceeding the per-message cap, and unknown critical fields MUST be rejected. Unknown non-critical fields may be ignored only where this draft explicitly allows extension. All currently specified fields are critical. No padding bytes or trailing bytes are allowed. Maximum UDP payload is a local configurable cap no greater than the IPv6 path MTU minus outer IPv6 and UDP headers; the initial implementation must publish its chosen cap and enforce it before allocation.
 
-For handshake messages, the header's payload-length field is the exact control payload length and is not assumed to include an AEAD tag. For encrypted established-session controls and DATA, the payload length includes the AEAD tag. This distinction MUST be explicit in the common-header errata before implementation; see Section 10.
+For plaintext INIT, RETRY, and RESP, the header payload_length is the exact unencrypted control-payload length and includes no implicit AEAD tag. FINISH_I and FINISH_R are encrypted handshake controls: their payload_length counts the complete AES-256-GCM ciphertext plus its 16-byte tag. Encrypted established-session controls and DATA use the same ciphertext-plus-tag rule. The control prefix and TLVs in FINISH_I/FINISH_R are inside the encrypted plaintext.
 
 ### 2.1 Canonical signature input
 
@@ -98,7 +98,7 @@ Required TLVs:
 | 0x8006 | endpoint_binding | canonical endpoint tuple: address family (1 byte, value 6), IPv6 address (16 bytes), UDP port (2 bytes), router identity fingerprint (32 bytes) |
 | 0x8007 | signature | exactly 64-byte Ed25519 signature over the canonical signature input |
 
-The responder MUST validate the cookie before sending RESP. The initiator MUST validate the certificate chain to a pinned Router-CA trust anchor, identity fingerprint, endpoint binding, certificate validity, status signature and freshness, and RESP signature before accepting the responder. The responder's certificate must authorize the advertised endpoint under the profile defined by the deployment; if no such profile is provisioned, handshake establishment MUST fail.
+The endpoint_binding identifies the responder's advertised receiving WAN endpoint: IPv6 address, NLS UDP port, and responder identity fingerprint. It MUST match the endpoint authorized by the responder certificate/status evidence and the responder destination endpoint selected by the initiator. The signed outer tuple separately binds the observed packet direction. The initiator's own authorized endpoint is checked against its certificate/status evidence and the outer source tuple in FINISH_I. The responder MUST validate the cookie before sending RESP. The initiator MUST validate the certificate chain to a pinned Router-CA trust anchor, identity fingerprint, endpoint binding, certificate validity, status signature and freshness, and RESP signature before accepting the responder. If no endpoint-authorization profile is provisioned, handshake establishment MUST fail.
 
 ### 3.4 Key derivation after RESP
 
