@@ -2,7 +2,8 @@
 
 **Status:** Proposed; not frozen; not an implementation contract yet  
 **Protocol version:** 2  
-**Scope:** Router-to-router NLS data-plane envelope and minimum demultiplexing header  
+**Scope:** Router-to-router NLS data-plane envelope and shared framing header  
+**Related:** [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)  
 **Compatibility:** NLS v1 remains unchanged. A v1 peer MUST NOT interpret v2 packets as v1.  
 **Decision defaults used for this draft:** A1 — TUN/socket shim first; B1 — random short-lived opaque first-contact token; outer IPv6 addresses remain routable.
 
@@ -31,16 +32,16 @@ All multi-byte integers use network byte order (big-endian). The UDP payload sta
 |---:|---:|---|---|
 | 0 | 4 | magic | ASCII `NLS2` (hex `4e 4c 53 32`) |
 | 4 | 1 | version | `0x02` |
-| 5 | 1 | packet_type | `0x01` DATA; `0x02` CONTROL; other values rejected until specified |
+| 5 | 1 | packet_type | `0x01` DATA; `0x02` CONTROL; other values rejected |
 | 6 | 2 | flags | Defined bits only; all currently reserved bits MUST be zero |
 | 8 | 2 | header_length | `44` |
 | 10 | 2 | reserved | MUST be zero |
-| 12 | 16 | session_token | Random opaque session demultiplexing token; not an IP address or an authentication credential by itself |
+| 12 | 16 | exchange_id / session_token | During handshake, random `handshake_id`; after establishment, random `session_token`. Never an IP address or identity credential. |
 | 28 | 4 | key_epoch | Unsigned key epoch negotiated for this directional session |
 | 32 | 8 | sequence_number | Unsigned monotonically increasing per-direction sequence number |
-| 40 | 4 | ciphertext_length | Number of bytes following the header, including the 16-byte AEAD tag |
+| 40 | 4 | payload_length | Exact number of bytes following the header. For DATA and encrypted established-session controls, includes the 16-byte AEAD tag; for plaintext stateless/signed handshake controls, equals the control payload length and includes no implicit tag. |
 
-For DATA, ciphertext_length MUST be at least 16 bytes (the AEAD tag) plus the minimum encoded inner-envelope length defined in Section 4. A receiver MUST enforce a configured maximum datagram size before allocating or decrypting. The UDP payload length MUST equal 44 + ciphertext_length exactly.
+For DATA, payload_length MUST be at least 16 bytes (the AEAD tag) plus the minimum encoded inner-envelope length defined in Section 4. For CONTROL, packet-specific protection and minimum lengths are defined in [NLS_V2_HANDSHAKE_CONTROL_DRAFT.md](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md). A receiver MUST enforce a configured maximum datagram size before allocating or decrypting. The UDP payload length MUST equal 44 + payload_length exactly.
 
 ### 2.1 Nonce construction and replay
 
@@ -48,13 +49,13 @@ For AES-256-GCM, construct the 96-bit nonce as:
 
 `nonce = uint32_be(key_epoch) || uint64_be(sequence_number)`
 
-This is safe only if each directional AEAD key is unique to one sender direction and the pair (key_epoch, sequence_number) is never reused under that key. A sender MUST persist or safely rotate key material before sequence wrap or process restart could repeat a nonce. Sequence numbers MUST NOT wrap. Key rotation MUST derive a new directional key and increment the epoch under an authenticated key-update procedure; key update messages are not yet specified here and are an implementation blocker.
+This is safe only if each directional AEAD key is unique to one sender direction and the pair (key_epoch, sequence_number) is never reused under that key. A sender MUST persist or safely rotate key material before sequence wrap or process restart could repeat a nonce. Sequence numbers MUST NOT wrap. The handshake/control draft currently reserves KEY_UPDATE and requires session re-establishment before epoch/sequence exhaustion or a restart that could repeat a nonce. Long-lived sessions are blocked until authenticated key update and crash-safe sequence handling are specified.
 
 The receiver maintains a bounded sliding replay window per session and direction. It MUST authenticate the AEAD tag before committing a packet as accepted. Duplicate, too-old, malformed, or unauthenticated packets are dropped. A receiver MUST NOT advance replay state based only on unauthenticated header fields.
 
 ### 2.2 AEAD associated data
 
-The exact 44 header bytes, the outer IPv6 source and destination addresses, and the UDP source and destination ports are authenticated as AEAD associated data. Each relay rewraps the packet, so the new hop's outer fields and header are authenticated with the new hop key. Header values are parsed and bounded before use but are not trusted until authentication succeeds.
+For AEAD-protected DATA and established-session CONTROL, the exact 44 header bytes, outer IPv6 source and destination addresses, and UDP source and destination ports are authenticated as associated data. Each relay rewraps the packet, so the next hop's outer fields and header are authenticated with that hop's independent key. Plaintext INIT/RETRY controls are not AEAD-authenticated; RETRY uses an address/port-bound cookie, and RESP uses a certificate-validated Ed25519 signature binding the endpoint tuple. Header values are parsed and bounded before use but are not trusted until the applicable authentication check succeeds.
 
 ## 3. Hop key establishment
 
