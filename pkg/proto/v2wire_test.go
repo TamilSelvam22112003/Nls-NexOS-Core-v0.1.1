@@ -167,7 +167,7 @@ func TestHopPlaintextRoundTripAndStrictLengths(t *testing.T) {
 	identity := [32]byte{1, 2, 3}
 	input := HopPlaintext{
 		PreviousHopIdentity: identity,
-		PreviousHopLocator:  netip.MustParseAddr("2001:db8:100::1"),
+		PreviousHopLocator:  LogicalLocatorForIdentity(identity),
 		InnerEnvelope:       []byte{0x4e, 0x32, 0x44, 0x45, 1, 2, 3, 4},
 	}
 	encoded, err := MarshalHopPlaintext(input, 1024)
@@ -187,6 +187,12 @@ func TestHopPlaintextRoundTripAndStrictLengths(t *testing.T) {
 	trailing := append(append([]byte(nil), encoded...), 0)
 	if _, err := ParseHopPlaintext(trailing, 1024); !errors.Is(err, ErrV2HopPlaintext) {
 		t.Fatalf("trailing hop plaintext byte must fail, got %v", err)
+	}
+
+	wrongLocator := input
+	wrongLocator.PreviousHopLocator = netip.MustParseAddr("fd00::1234")
+	if _, err := MarshalHopPlaintext(wrongLocator, 1024); !errors.Is(err, ErrV2HopPlaintext) {
+		t.Fatalf("locator not derived from authenticated identity must fail, got %v", err)
 	}
 	badIdentityLength := append([]byte(nil), encoded...)
 	badIdentityLength[2] = 31
