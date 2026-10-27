@@ -5,6 +5,7 @@
 - Cross-document findings: [NLS_V2_CROSS_DOCUMENT_REVIEW.md](NLS_V2_CROSS_DOCUMENT_REVIEW.md)
 - Golden-vector requirements: [NLS_V2_CRYPTO_VECTORS_PLAN.md](NLS_V2_CRYPTO_VECTORS_PLAN.md)
 - Destination-protection profile: [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)
+- Destination-protection handshake draft: [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md)
 - Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
 
 - Status: **Design proposal only; not a frozen wire contract**
