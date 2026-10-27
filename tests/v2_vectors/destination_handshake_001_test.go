@@ -11,7 +11,6 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
-	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -386,5 +385,4 @@ func TestDestinationEndpointHandshake001(t *testing.T) {
 	if ed25519.Verify(caKey, append([]byte("NLS2-ROUTER-STATUS\x00"), badStatus[:240]...), badStatus[240:]) {
 		t.Fatal("tampered Router-CA status signature accepted")
 	}
-	_ = big.NewInt(0) // keep the fixture's serial-width check explicit in the verifier
 }
