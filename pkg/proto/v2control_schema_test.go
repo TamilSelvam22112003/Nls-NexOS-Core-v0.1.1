@@ -3,6 +3,7 @@ package proto
 import (
 	"encoding/binary"
 	"errors"
+	"net/netip"
 	"testing"
 )
 
@@ -92,10 +93,19 @@ func validV2EndpointBindingForTest() []byte {
 }
 
 func TestValidateV2ControlMessageAcceptsCandidateSchemas(t *testing.T) {
-	for _, messageType := range []uint8{V2ControlInit, V2ControlRetry, V2ControlResp, V2ControlFinishI, V2ControlFinishR, V2ControlClose} {
-		t.Run(string(rune('0'+messageType)), func(t *testing.T) {
-			if err := ValidateV2ControlMessage(validV2ControlMessageForTest(messageType)); err != nil {
-				t.Fatalf("valid message type 0x%02x rejected: %v", messageType, err)
+	messages := []V2ControlMessage{
+		validV2ControlMessageForTest(V2ControlInit),
+		validV2ControlMessageForTest(V2ControlRetry),
+		validV2ControlMessageForTest(V2ControlResp),
+		validV2ControlMessageForTest(V2ControlFinishI),
+		validV2ControlMessageForTest(V2ControlFinishR),
+		validV2ControlMessageForTest(V2ControlClose),
+	}
+	names := []string{"INIT", "RETRY", "RESP", "FINISH_I", "FINISH_R", "CLOSE"}
+	for i, message := range messages {
+		t.Run(names[i], func(t *testing.T) {
+			if err := ValidateV2ControlMessage(message); err != nil {
+				t.Fatalf("valid message type 0x%02x rejected: %v", message.Type, err)
 			}
 		})
 	}
@@ -103,13 +113,16 @@ func TestValidateV2ControlMessageAcceptsCandidateSchemas(t *testing.T) {
 
 func TestValidateV2ControlMessageRejectsFieldSetAndLengthDefects(t *testing.T) {
 	tests := []struct {
-		name string
+		name    string
 		message V2ControlMessage
 	}{
 		{name: "INIT missing field", message: V2ControlMessage{Type: V2ControlInit}},
 		{name: "INIT unknown field", message: V2ControlMessage{Type: V2ControlInit, TLVs: []V2ControlTLV{{Type: 0x8fff}}}},
 		{name: "RETRY cookie length", message: V2ControlMessage{Type: V2ControlRetry, TLVs: []V2ControlTLV{{Type: 0x8006, Value: []byte{1}}}}},
 		{name: "RESP signature length", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlResp); m.TLVs[6].Value = []byte{1}; return m }()},
+		{name: "RESP unsupported suite", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlResp); m.TLVs[4].Value = []byte{0, 2}; return m }()},
+		{name: "RESP malformed certificate chain", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlResp); m.TLVs[0].Value = []byte{0, 0, 0, 1, 0, 0, 0, 8, 1}; return m }()},
+		{name: "RESP invalid endpoint", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlResp); bad := validV2EndpointBindingForTest(); copy(bad[1:17], make([]byte, 16)); m.TLVs[5].Value = bad; return m }()},
 		{name: "FINISH_I status length", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlFinishI); m.TLVs[1].Value = []byte{1}; return m }()},
 		{name: "FINISH_R zero token", message: func() V2ControlMessage { m := validV2ControlMessageForTest(V2ControlFinishR); m.TLVs[1].Value = make([]byte, 16); return m }()},
 		{name: "CLOSE unknown reason", message: V2ControlMessage{Type: V2ControlClose, TLVs: []V2ControlTLV{{Type: 0x8001, Value: []byte{0, 99}}}}},
@@ -121,5 +134,22 @@ func TestValidateV2ControlMessageRejectsFieldSetAndLengthDefects(t *testing.T) {
 				t.Fatalf("expected schema rejection, got %v", err)
 			}
 		})
+	}
+}
+
+func TestV2EndpointBindingUsesRoutableIPv6Address(t *testing.T) {
+	for _, address := range []netip.Addr{
+		netip.IPv6Unspecified(),
+		netip.MustParseAddr("::1"),
+		netip.MustParseAddr("ff02::1"),
+		netip.MustParseAddr("fe80::1"),
+		netip.MustParseAddr("::ffff:192.0.2.1"),
+	} {
+		binding := validV2EndpointBindingForTest()
+		addressBytes := address.As16()
+		copy(binding[1:17], addressBytes[:])
+		if err := validateV2EndpointBinding(binding); err == nil {
+			t.Fatalf("invalid endpoint address %s accepted", address)
+		}
 	}
 }
