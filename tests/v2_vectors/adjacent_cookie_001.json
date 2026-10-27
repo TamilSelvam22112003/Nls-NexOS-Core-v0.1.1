@@ -28,6 +28,14 @@
       "expected": "reject_cookie"
     },
     {
+      "mutation": "change destination IPv6",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change source UDP port",
+      "expected": "reject_cookie"
+    },
+    {
       "mutation": "change destination UDP port",
       "expected": "reject_cookie"
     },
@@ -41,6 +49,10 @@
     },
     {
       "mutation": "change ephemeral public key",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change time bucket",
       "expected": "reject_cookie"
     },
     {
