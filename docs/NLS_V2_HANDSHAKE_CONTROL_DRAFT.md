@@ -118,7 +118,7 @@ Derive 32 bytes for each label. Handshake keys protect FINISH_I/FINISH_R; data k
 FINISH_I is AES-256-GCM protected under the initiator-to-responder handshake key, with header key_epoch=0, sequence_number=0, and nonce `uint32_be(0) || uint64_be(0)`. The exchange_id in the common header is still the handshake_id for this message. AAD is the exact common header plus outer IPv6 addresses and UDP ports. The decrypted control payload MUST contain:
 
 - 0x8001 initiator_certificate_chain: `uint32_be(count)` followed by `count` repetitions of `uint32_be(cert_length) || DER_certificate`; leaf first; count >= 1; total TLV value <= 16 KiB.
-- 0x8002 initiator_status_evidence: Router-CA-signed status object, total <= 4 KiB.
+- 0x8002 initiator_status_evidence: `uint32_be(status_object_length) || status_object`; `status_object_length` MUST equal 304 and the bytes MUST be one complete canonical N2ST object (total TLV value length 308 bytes).
 - 0x8003 transcript_hash: exactly 32 bytes, SHA-256 over INIT-with-cookie and RESP datagrams.
 - 0x8004 initiator_signature: exactly 64 bytes, Ed25519 signature over the Section 2.1 canonical signature input, using the exact decrypted control record with this signature TLV omitted.
 
