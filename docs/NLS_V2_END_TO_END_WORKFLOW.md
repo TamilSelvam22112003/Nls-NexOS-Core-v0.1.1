@@ -17,6 +17,8 @@ The outer IPv6 source and destination fields are **not encrypted in place**. Ord
 
 The protected logical source locator is a field inside the authenticated encrypted hop plaintext. It is not the outer IPv6 source address, not a route, and not proof of identity by itself. A relay must validate it against the already authenticated peer identity and the Router-CA-authorized outer endpoint.
 
+The hop plaintext also carries a separate 16-byte opaque `route_token`. This resolves a necessary forwarding question: because the original destination packet is destination-encrypted, a transit relay cannot inspect it to choose the next hop. The relay looks up the route token in a local, generation-checked binding installed via authenticated control-plane provisioning; the binding names an authorized next-hop router or a local-terminal action. The route token is not an IP address, session token, or identity fingerprint. Missing, expired, unauthorized, or conflicting route bindings fail closed. The control-plane route-binding message encoding is still an implementation gate.
+
 ### Packet path (conceptual)
 
 ```text
