@@ -1,8 +1,8 @@
 # NLS v2 Cross-Document Security Review
 
 - Status: review findings; proposal only, not a frozen protocol contract.
-- Scope: `NLS_V2_WIRE_SPEC_DRAFT.md`, `NLS_V2_HANDSHAKE_CONTROL_DRAFT.md`, `NLS_V2_WORKFLOW.md`, `INTEGRATION_IMPACT_ANALYSIS.md`, and `SPEC_ERRATA.md`.
-- Runtime code and the v1 wire contract are unchanged.
+- Scope: `NLS_V2_END_TO_END_WORKFLOW.md`, `NLS_V2_WIRE_SPEC_DRAFT.md`, `NLS_V2_HANDSHAKE_CONTROL_DRAFT.md`, `NLS_V2_WORKFLOW.md`, `INTEGRATION_IMPACT_ANALYSIS.md`, and `SPEC_ERRATA.md`.
+- The branch contains standalone v2 `pkg/proto` primitives and tests; the full live handshake/TUN/forwarding path is not integrated. The NLS v1 wire contract remains unchanged.
 
 ## Findings
 
