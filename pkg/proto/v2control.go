@@ -7,15 +7,15 @@ import (
 )
 
 const (
-	V2ControlPrefixSize = 4
-	v2ControlTLVHeaderSize = 6
-	V2ControlInit uint8 = 0x01
-	V2ControlRetry uint8 = 0x02
-	V2ControlResp uint8 = 0x03
-	V2ControlFinishI uint8 = 0x04
-	V2ControlFinishR uint8 = 0x05
-	V2ControlClose uint8 = 0x06
-	V2ControlKeyUpdate uint8 = 0x07
+	V2ControlPrefixSize      = 4
+	v2ControlTLVHeaderSize   = 6
+	V2ControlInit       uint8 = 0x01
+	V2ControlRetry      uint8 = 0x02
+	V2ControlResp       uint8 = 0x03
+	V2ControlFinishI    uint8 = 0x04
+	V2ControlFinishR    uint8 = 0x05
+	V2ControlClose      uint8 = 0x06
+	V2ControlKeyUpdate  uint8 = 0x07
 )
 
 var (
