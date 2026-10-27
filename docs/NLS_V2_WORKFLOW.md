@@ -10,6 +10,7 @@
 - Destination endpoint handshake: [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md)
 - Canonical Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
 - Session key/restart lifecycle: [NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md](NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md)
+- Encrypted hop plaintext includes an opaque route token; route bindings must be provisioned through an authenticated control path (see wire draft Section 4).
 - Cross-language vector tests: `tests/v2_vectors/`
 - Adjacent-hop cookie vector: [adjacent_cookie_001.json](../tests/v2_vectors/adjacent_cookie_001.json), [Go verifier](../tests/v2_vectors/adjacent_cookie_001_test.go), [Python verifier](../tests/v2_vectors/verify_adjacent_cookie_001.py)
 
