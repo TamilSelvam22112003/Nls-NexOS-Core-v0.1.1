@@ -46,6 +46,11 @@ The status-object and destination data-envelope fixtures have cross-language che
 
 **Disposition:** use `NLS_V2_CRYPTO_VECTORS_PLAN.md` as the checklist. No interoperability claim until both repositories consume the same fixtures and the complete positive/negative handshake suite passes.
 
+### F-09 — Status-object golden fixture had an invalid total length (critical; corrected)
+The first Go CI run rejected the status fixture because `status_object_304_hex` contained twelve extra zero bytes between the 240-byte signed prefix and the 64-byte Ed25519 signature, making the object 316 bytes rather than 304. The canonical prefix and signature were individually valid, but the complete object was not.
+
+**Resolution:** the fixture now sets `status_object_304_hex = status_prefix_240_hex || signature_hex`, and the resulting object is exactly 304 bytes. This was a test-fixture defect, not a runtime-code change. The corrected fixture still needs a fresh completed CI run in both repositories.
+
 ## Release gates
 
 1. Review and freeze the candidate destination envelope, destination endpoint handshake, and Router-CA status profiles; preserve v1 unchanged.
