@@ -66,7 +66,7 @@ Each adjacent router pair establishes **independent directional keys** after mut
 - HKDF-SHA-256: derive distinct directional AES-256-GCM keys and session binding values from the shared secret and authenticated transcript.
 - AES-256-GCM: per-hop envelope confidentiality and integrity.
 
-The signed transcript MUST bind protocol version, both router identities, both advertised WAN endpoints, both ephemeral public keys, the handshake nonces, negotiated algorithms, and the intended session/token. Directional keys MUST differ. Public-key possession alone does not establish that an IP address belongs to that router; the Router-CA certificate and signed endpoint binding must be validated.
+The authenticated handshake transcript MUST bind protocol version, both router identities, both advertised WAN endpoints, both ephemeral public keys, the handshake nonces, and the negotiated algorithm suite. The handshake_id identifies the pending exchange; the responder-generated session_token is bound to the derived session by the authenticated FINISH_R payload and becomes active only after the initiator validates FINISH_R. Directional keys MUST differ. Public-key possession alone does not establish that an IP address belongs to that router; the Router-CA certificate and signed endpoint binding must be validated.
 
 RSA key pairs are not required by this draft. Do not create two RSA pairs without a defined interoperable role. Certificate encoding/profile, handshake message bytes, KDF context labels, transcript hashing, cookie format, and key-update format remain open prerequisites and are intentionally not invented here.
 
