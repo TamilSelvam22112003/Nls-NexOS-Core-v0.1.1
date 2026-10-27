@@ -23,7 +23,7 @@ Required TLVs, in exact ascending order:
 - 0x8018 suite_id: exactly two bytes, 0x0001.
 - 0x8019 initiator_signature: exactly 64-byte Ed25519 signature.
 
-D_INIT signature input is ASCII NLS2-E2E-HS-SIG, one zero byte, message type 0x11, and the exact canonical control prefix plus TLVs excluding the initiator_signature TLV. The signature binds both identities, session ID, certificate/status evidence, nonce, ephemeral key, and suite. The receiver validates bounds before parsing large objects and applies per-authenticated-hop rate/concurrency limits.
+D_INIT signature input is `ASCII("NLS2-E2E-HS-SIG") || 0x00 || canonical_D_INIT_without_signature_TLV`, where the canonical control record includes its 4-byte control prefix (including message_type 0x11) and TLVs 0x8011–0x8018 in exact encoded order. Do not append a second message-type byte outside the control record. The signature binds both identities, session ID, certificate/status evidence, nonce, ephemeral key, and suite. The receiver validates bounds before parsing large objects and applies per-authenticated-hop rate/concurrency limits.
 
 ## 3. D_RESP (0x12)
 
