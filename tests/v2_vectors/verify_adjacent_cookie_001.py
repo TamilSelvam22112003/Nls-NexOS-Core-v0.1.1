@@ -7,8 +7,8 @@ import json
 import struct
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import x25519
 
 v = json.loads(Path(__file__).with_name("adjacent_cookie_001.json").read_text())
 outer = v["outer_tuple"]
@@ -35,7 +35,6 @@ mac = hmac.new(secret, raw, hashlib.sha256).digest()
 cookie = struct.pack(">Q", inp["time_bucket"]) + mac
 assert mac.hex() == expected["mac_hex"]
 assert cookie.hex() == expected["cookie_hex"] and len(cookie) == expected["cookie_length_bytes"] == 40
-
 mutations = [
     make_input(src=source[:-1] + bytes([source[-1] ^ 1])),
     make_input(dst=destination[:-1] + bytes([destination[-1] ^ 1])),
