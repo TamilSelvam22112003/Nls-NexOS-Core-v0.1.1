@@ -24,7 +24,7 @@ The 72-byte N2DE envelope and its AES-256-GCM AAD/nonce/replay rules are defined
 ### F-04 — Router-CA status profile is specified as a candidate (high; implementation gate remains)
 `ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md` defines a fixed 304-byte N2ST object, exact signature input, endpoint slots, freshness/generation rules, certificate binding, clock rollback policy, and a v2 status-push proposal over the negotiated mTLS control channel. A synthetic positive vector is checked by Go and Python.
 
-**Disposition:** the byte-level candidate is no longer structurally open, but X.509 path/issuance integration, sidecar registry mapping, control capability negotiation, revocation delivery, and real-CA integration tests remain required before implementation can be accepted.
+**Disposition:** the byte-level candidate is no longer structurally open. The first full status-object Go test exposed an overlong synthetic fixture (316 bytes); the fixture has been corrected to prefix(240)||signature(64), but a fresh CI pass is pending. X.509 path/issuance integration, sidecar registry mapping, control capability negotiation, revocation delivery, and real-CA integration tests remain required before implementation can be accepted.
 
 ### F-08 — Destination D_INIT signature input was ambiguous (high; corrected in this branch)
 The earlier wording appended message_type 0x11 separately even though the canonical control record already begins with that message type. That could cause independent implementations to sign different byte strings.
