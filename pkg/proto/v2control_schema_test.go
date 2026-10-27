@@ -85,7 +85,7 @@ func validV2StatusTLVForTest() []byte {
 func validV2EndpointBindingForTest() []byte {
 	out := make([]byte, 51)
 	out[0] = 6
-	out[16] = 1
+	copy(out[1:17], []byte{0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10})
 	binary.BigEndian.PutUint16(out[17:19], 4242)
 	out[19] = 0x01
 	return out
