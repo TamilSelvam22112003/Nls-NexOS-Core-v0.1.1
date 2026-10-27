@@ -1,16 +1,14 @@
 # NLS v2 Workflow and Impact Analysis (Proposal)
 
-- Handshake/control wire draft: [NLS_V2_HANDSHAKE_CONTROL_DRAFT.md](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)
-- Data-plane framing draft: [NLS_V2_WIRE_SPEC_DRAFT.md](NLS_V2_WIRE_SPEC_DRAFT.md)
 - Cross-document findings: [NLS_V2_CROSS_DOCUMENT_REVIEW.md](NLS_V2_CROSS_DOCUMENT_REVIEW.md)
-- Golden-vector requirements: [NLS_V2_CRYPTO_VECTORS_PLAN.md](NLS_V2_CRYPTO_VECTORS_PLAN.md)
+- Golden-vector plan: [NLS_V2_CRYPTO_VECTORS_PLAN.md](NLS_V2_CRYPTO_VECTORS_PLAN.md)
 - Profile-level golden vectors: [NLS_V2_PROFILE_GOLDEN_VECTORS_DRAFT.md](NLS_V2_PROFILE_GOLDEN_VECTORS_DRAFT.md)
+- Adjacent-hop wire draft: [NLS_V2_WIRE_SPEC_DRAFT.md](NLS_V2_WIRE_SPEC_DRAFT.md)
+- Adjacent-hop handshake draft: [NLS_V2_HANDSHAKE_CONTROL_DRAFT.md](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)
+- Destination-protection envelope: [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)
 - Destination endpoint handshake: [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md)
 - Canonical Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
 - Cross-language vector tests: `tests/v2_vectors/`
-- Destination-protection profile: [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)
-- Destination-protection handshake draft: [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md)
-- Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
 
 - Status: **Design proposal only; not a frozen wire contract**
 - Target: a separately versioned NLS v2 / future release after protocol review
@@ -30,7 +28,7 @@ NLS v2 is intended to carry client traffic through authenticated NLS relays whil
 | Shared protocol definitions | Define versioned v2 framing, canonical field encoding, size limits, error codes, and test vectors | v1 bytes remain unchanged |
 | Router-CA / enrollment | Bind router identity, certificate, advertised WAN endpoints, key roles, status, and revocation generation | No private key material in registry responses |
 | Peer directory / lookup | Authenticated, signed lookup of peer identity and authorized endpoint data | Caller ACTIVE; freshness and revocation checked |
-| Handshake/session manager | Establish distinct directional adjacent-hop keys; destination-protection keys require a separate specified profile; transcript binding, expiry, replay prevention, rekey | No static public-key encryption per packet; no key reuse across roles |
+| Handshake/session manager | Establish distinct directional adjacent-hop keys; destination-protection uses the separate D_INIT/D_RESP/D_FINISH endpoint handshake and N2DE profile; transcript binding, expiry, replay prevention, rekey | No static public-key encryption per packet; no key reuse across roles |
 | VIP Table | Temporary first-contact state only: token/vIP, nonce, expiry, peer reference, handshake state | Bounded size, one-time use, collision/replay checks, atomic cleanup |
 | Trust Table | Verified peer identity, certificate fingerprint, authorized endpoint(s), status/generation, session references | Populate only after mutual validation; revoke invalidates sessions |
 | Packet encoder/decoder | Outer IPv6/UDP + minimal NLS framing + AEAD-protected hop envelope + destination-protected inner packet | Exact lengths, authenticated associated data, strict parser |
