@@ -50,5 +50,9 @@ Expected D_INIT length: 881 bytes. Expected D_RESP length: 843 bytes. Expected t
 
 This fixture is deterministic test material only. The Go test is intended to independently verify certificate paths, status signatures/bindings, control TLV canonicalization, D_INIT/D_RESP signatures, transcript, X25519, HKDF outputs, and both FINISH AEAD records. CI verification is pending; the fixture is not an interoperability claim.
 
+## Vector 4 — Adjacent-hop stateless cookie MAC
+
+The deterministic fixture is `tests/v2_vectors/adjacent_cookie_001.json`. Go checks the exact cookie MAC input, X25519 public-key derivation, HMAC-SHA-256 output, 40-byte cookie, and invalidation when source address, destination port, handshake ID, nonce, ephemeral public key, or secret changes. `verify_adjacent_cookie_001.py` independently recomputes the public key, input bytes, MAC, and cookie using Python cryptography and the standard library. This covers the stateless cookie construction only; it does not validate the complete INIT/RESP/FINISH handshake or certificate/status policy.
+
 ## Conformance caveats
 These two vectors cover the fixed-width status-object encoding/signature and the 72-byte destination data-envelope AES-256-GCM framing. The destination envelope was generated with Python cryptography and is checked by Go's standard-library AES-GCM implementation. The status vector tests a synthetic certificate fingerprint, not X.509 path validation. The destination endpoint handshake still lacks byte-exact shared vectors; authenticated adjacent-hop key update, crash-safe nonce lifecycle, parser/policy fuzzing, and full Router-CA integration remain open. Passing these vector tests does not make NLS v2 interoperable or production-ready.
