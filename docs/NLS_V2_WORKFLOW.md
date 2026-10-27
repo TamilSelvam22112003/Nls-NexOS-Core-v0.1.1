@@ -1,6 +1,7 @@
 # NLS v2 Workflow and Impact Analysis (Proposal)
 
 - Cross-document findings: [NLS_V2_CROSS_DOCUMENT_REVIEW.md](NLS_V2_CROSS_DOCUMENT_REVIEW.md)
+- End-to-end workflow and routing integration: [NLS_V2_END_TO_END_WORKFLOW.md](NLS_V2_END_TO_END_WORKFLOW.md)
 - Golden-vector plan: [NLS_V2_CRYPTO_VECTORS_PLAN.md](NLS_V2_CRYPTO_VECTORS_PLAN.md)
 - Profile-level golden vectors: [NLS_V2_PROFILE_GOLDEN_VECTORS_DRAFT.md](NLS_V2_PROFILE_GOLDEN_VECTORS_DRAFT.md)
 - Adjacent-hop wire draft: [NLS_V2_WIRE_SPEC_DRAFT.md](NLS_V2_WIRE_SPEC_DRAFT.md)
@@ -15,7 +16,7 @@
 - Status: **Design proposal only; not a frozen wire contract**
 - Target: a separately versioned NLS v2 / future release after protocol review
 - Related: [PROTOCOL.md](PROTOCOL.md), [PROTOCOL_FREEZE.md](PROTOCOL_FREEZE.md), [SPEC_ERRATA.md](SPEC_ERRATA.md), [ADR-0016](adr/0016-per-hop-source-locator-protection.md)
-- Scope of this document: impact analysis, workflow, open-question disposition, and acceptance gates. No implementation is implied.
+- Scope of this document: impact analysis, workflow, open-question disposition, and acceptance gates. Standalone v2 protocol primitives exist, but a live end-to-end router/TUN implementation is not implied.
 
 ## 1. Design objective
 
