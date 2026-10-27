@@ -143,12 +143,12 @@ The 44-byte NLS header, UDP header, outer IPv6 header, AEAD tag, hop plaintext f
 
 ## 12. Explicit unresolved blockers
 
-- Exact handshake/control packet formats and state machine.
+- Handshake/control packet formats and state machines are drafted; shared conformance vectors and independent review remain required.
 - Router-CA status evidence and endpoint authorization are specified as a fixed 304-byte candidate in `ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md`; certificate profile and implementation mapping still require review.
 - Stateless cookie construction and anti-amplification limits.
 - Destination-protection envelope and endpoint handshake are drafted separately; their interoperability vectors, key lifecycle and review remain release gates.
 - Authenticated key update and restart-safe nonce/sequence persistence strategy.
-- Canonical identity encoding, field encoding rules, error codes, and maximum sizes.
+- Shared golden vectors, parser/property/fuzz coverage, and cross-implementation error/size-limit conformance.
 - TUN addressing/routing policy, loop prevention, return routing, ICMPv6/PMTU, and interaction with firewall/uRPF/NAT.
 - How routing adjacency is bound to authenticated NLS peer state without treating LSDB state as trust.
 
