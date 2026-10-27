@@ -49,7 +49,7 @@ The status-object and destination data-envelope fixtures have cross-language che
 ### F-09 — Status-object golden fixture had an invalid total length (critical; corrected)
 The first Go CI run rejected the status fixture because `status_object_304_hex` contained twelve extra zero bytes between the 240-byte signed prefix and the 64-byte Ed25519 signature, making the object 316 bytes rather than 304. The canonical prefix and signature were individually valid, but the complete object was not.
 
-**Resolution:** the fixture now sets `status_object_304_hex = status_prefix_240_hex || signature_hex`, and the resulting object is exactly 304 bytes. This was a test-fixture defect, not a runtime-code change. The corrected fixture still needs a fresh completed CI run in both repositories.
+**Resolution:** the fixture now sets `status_object_304_hex = status_prefix_240_hex || signature_hex`, and the object is exactly 304 bytes. A subsequent Go run also caught a decimal `certificate_serial_u64` value that differed by six from the encoded bytes; the decimal value was corrected to match `0x0102030405060708`. The signature over the exact 240-byte prefix was independently verified locally. These were test-fixture defects, not runtime-code changes; fresh CI runs for the corrections are pending.
 
 
 ### F-10 — Adjacent-hop signature and certificate-chain encoding needed exact canonical rules (high; clarified, vectors still required)
