@@ -2,6 +2,8 @@
 
 - Handshake/control wire draft: [NLS_V2_HANDSHAKE_CONTROL_DRAFT.md](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)
 - Data-plane framing draft: [NLS_V2_WIRE_SPEC_DRAFT.md](NLS_V2_WIRE_SPEC_DRAFT.md)
+- Cross-document findings: [NLS_V2_CROSS_DOCUMENT_REVIEW.md](NLS_V2_CROSS_DOCUMENT_REVIEW.md)
+- Golden-vector requirements: [NLS_V2_CRYPTO_VECTORS_PLAN.md](NLS_V2_CRYPTO_VECTORS_PLAN.md)
 
 - Status: **Design proposal only; not a frozen wire contract**
 - Target: a separately versioned NLS v2 / future release after protocol review
