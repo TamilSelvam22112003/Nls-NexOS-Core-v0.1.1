@@ -8,6 +8,7 @@
 - Destination-protection envelope: [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)
 - Destination endpoint handshake: [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md)
 - Canonical Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
+- Session key/restart lifecycle: [NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md](NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md)
 - Cross-language vector tests: `tests/v2_vectors/`
 
 - Status: **Design proposal only; not a frozen wire contract**
