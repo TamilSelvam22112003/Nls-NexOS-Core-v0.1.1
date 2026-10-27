@@ -1,5 +1,8 @@
 # NLS v2 Workflow and Impact Analysis (Proposal)
 
+- Handshake/control wire draft: [NLS_V2_HANDSHAKE_CONTROL_DRAFT.md](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)
+- Data-plane framing draft: [NLS_V2_WIRE_SPEC_DRAFT.md](NLS_V2_WIRE_SPEC_DRAFT.md)
+
 - Status: **Design proposal only; not a frozen wire contract**
 - Target: a separately versioned NLS v2 / future release after protocol review
 - Related: [PROTOCOL.md](PROTOCOL.md), [PROTOCOL_FREEZE.md](PROTOCOL_FREEZE.md), [SPEC_ERRATA.md](SPEC_ERRATA.md), [ADR-0016](adr/0016-per-hop-source-locator-protection.md)
