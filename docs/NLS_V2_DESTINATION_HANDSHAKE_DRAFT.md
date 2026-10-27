@@ -16,7 +16,7 @@ Required TLVs, in exact ascending order:
 - 0x8011 e2e_session_id: 16 random bytes, nonzero; must be unique among active sessions at both endpoints.
 - 0x8012 initiator_router_id: 32-byte identity fingerprint.
 - 0x8013 responder_router_id: 32-byte identity fingerprint.
-- 0x8014 initiator_certificate_chain: uint32 count followed by DER certificates, leaf first; total at most 16 KiB.
+- 0x8014 initiator_certificate_chain: uint32 count followed by DER certificates, leaf first; total at most 4 KiB.
 - 0x8015 initiator_status_object: exactly 304 bytes.
 - 0x8016 nonce_i: 32 fresh CSPRNG bytes.
 - 0x8017 ephemeral_x25519_i: 32-byte X25519 public key.
@@ -30,7 +30,7 @@ D_INIT signature input is ASCII NLS2-E2E-HS-SIG, one zero byte, message type 0x1
 Required TLVs:
 - 0x8021 e2e_session_id: the exact ID from D_INIT.
 - 0x8022 responder_router_id: 32-byte identity fingerprint.
-- 0x8023 responder_certificate_chain: same DER-chain encoding, total at most 16 KiB.
+- 0x8023 responder_certificate_chain: same DER-chain encoding, total at most 4 KiB.
 - 0x8024 responder_status_object: exactly 304 bytes.
 - 0x8025 nonce_r: 32 fresh CSPRNG bytes.
 - 0x8026 ephemeral_x25519_r: 32-byte X25519 public key.
@@ -43,7 +43,7 @@ D_RESP signature input is ASCII NLS2-E2E-HS-SIG, one zero byte, followed by the 
 
 Let transcript_hash be SHA-256 of ASCII NLS2-E2E-TRANSCRIPT, one zero byte, the exact encoded D_INIT record, and the exact encoded D_RESP record including signatures. No outer IPv6/UDP fields are included.
 
-Both endpoints compute X25519(ephemeral_private_local, ephemeral_public_peer) and reject an all-zero shared secret. Let salt be SHA-256 of ASCII NLS2-E2E-SALT, one zero byte, nonce_i, nonce_r, and transcript_hash. HKDF-SHA-256 uses the X25519 shared secret as input keying material. Derive 32-byte keys with these exact info labels:
+Both endpoints compute X25519(ephemeral_private_local, ephemeral_public_peer) and reject an all-zero shared secret. Let salt be SHA-256 of ASCII NLS2-E2E-HS-SALT, one zero byte, nonce_i, nonce_r, and transcript_hash. HKDF-SHA-256 uses the X25519 shared secret as input keying material. Derive 32-byte keys with these exact info labels:
 - NLS2 E2E initiator-to-responder handshake key v1
 - NLS2 E2E responder-to-initiator handshake key v1
 - NLS2 E2E initiator-to-responder data key v1
