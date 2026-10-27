@@ -81,12 +81,18 @@ After AEAD decryption, DATA plaintext contains the following canonical structure
 | 3 | previous_hop_identity | 32-byte SHA-256 fingerprint of the router's DER Ed25519 SubjectPublicKeyInfo; certificate itself is not repeated here |
 | 4 | previous_hop_locator_length | uint16; exactly 16 bytes for IPv6 |
 | 5 | previous_hop_locator | 16-byte NLS logical locator derived from the identity fingerprint as specified below; not the routable outer IPv6 source address |
-| 6 | inner_envelope_length | uint32; exact byte length of the following inner envelope |
-| 7 | inner_envelope | Destination-protected inner packet/envelope; opaque to transit relays |
+| 6 | route_token_length | uint16; MUST equal 16 |
+| 7 | route_token | 16-byte random opaque destination/route handle provisioned by the authenticated control plane; MUST NOT encode an IP address or identity fingerprint |
+| 8 | inner_envelope_length | uint32; exact byte length of the following inner envelope |
+| 9 | inner_envelope | Destination-protected inner packet/envelope; opaque to transit relays |
 
 The inner envelope MUST protect the original client/source address, destination/server address, transport metadata that is not required by the transit path, and application payload according to [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md). The endpoint key-establishment flow is proposed in [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md). Transit relays MUST NOT receive destination private keys. Both documents remain proposals and must be reviewed and backed by shared byte-exact vectors before implementation.
 
-The receiver MUST check every length with overflow-safe arithmetic, reject truncated or trailing bytes, validate the identity fingerprint against the authenticated adjacent session, and verify that the locator equals `LogicalLocatorForIdentity(previous_hop_identity)`. The outer IPv6 source address is separately validated against the peer's active Router-CA authorized WAN endpoint. Drop failures without forwarding.
+The receiver MUST check every length with overflow-safe arithmetic, reject truncated or trailing bytes, validate the identity fingerprint against the authenticated adjacent session, and verify that the locator equals `LogicalLocatorForIdentity(previous_hop_identity)`. The outer IPv6 source address is separately validated against the peer's active Router-CA authorized WAN endpoint. The route token is a distinct opaque 128-bit handle used only to select a locally installed forwarding binding; it is not the handshake/session token. The token is preserved unchanged while the hop wrapper is replaced.
+
+A relay cannot infer a next hop from an opaque destination envelope alone. Therefore, before protected traffic is admitted, authenticated control-plane provisioning MUST install a bounded per-relay route binding `route_token -> (generation, permitted_next_hop_identity or local-terminal action, expiry, policy)`. Install/update requires an authenticated privileged control path, strictly increasing generation, expiry, and validation that any next-hop identity has an ACTIVE trust entry and an established session. Packet data MUST NOT create or overwrite route bindings. Lower-generation updates are rejected; same-generation conflicting bindings are treated as equivocation; expired/unmapped tokens are dropped. The exact control-message encoding for route-binding updates remains a separate implementation gate.
+
+Drop failures without forwarding.
 
 ### 4.1 Canonical logical locator derivation
 
@@ -100,7 +106,7 @@ Let `identity_fingerprint` be the 32-byte SHA-256 fingerprint of the router's DE
 4. Authenticate and decrypt using the session's inbound directional key and nonce.
 5. Validate replay window, peer identity, previous-hop locator, session state, and policy. On any failure, drop and emit a rate-limited audit event; do not install routes or trust state.
 6. Validate the inner-envelope length and forwarding policy. The relay does not decrypt the destination-protected inner content.
-7. Select the next hop from the approved forwarding decision and an authenticated adjacent session.
+7. Resolve the encrypted hop plaintext's route_token through the locally installed, generation-checked route binding; require an active adjacent session for the selected next-hop identity, or select the local-terminal action. An absent, expired, unauthorized, or stale binding is a drop.
 8. Allocate the next direction's sequence number; build a fresh header/token/epoch; construct a fresh nonce; encrypt the hop plaintext under the next hop's outbound key with the correct AAD.
 9. Send with the next relay's routable outer IPv6 address and configured UDP port. Enforce MTU/PMTU policy and handle ICMPv6 Packet Too Big according to the implementation's network-stack design.
 
