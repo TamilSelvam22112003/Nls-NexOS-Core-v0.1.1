@@ -43,7 +43,9 @@ For plaintext INIT, RETRY, and RESP, the header payload_length is the exact unen
 
 For signed handshake messages, signature input is:
 
-`ASCII("NLS2-HANDSHAKE-SIG") || 0x00 || version(1 byte) || control_type(1 byte) || handshake_id(16 bytes) || canonical_control_payload_without_signature_TLV || outer_source_ipv6(16) || outer_destination_ipv6(16) || udp_source_port(2) || udp_destination_port(2)`
+`ASCII("NLS2-HANDSHAKE-SIG") || 0x00 || version(1 byte) || handshake_id(16 bytes) || canonical_control_record_without_signature_TLV || outer_source_ipv6(16) || outer_destination_ipv6(16) || udp_source_port(2) || udp_destination_port(2)`.
+
+`canonical_control_record_without_signature_TLV` is the exact 4-byte control prefix (including `control_type`) followed by the exact encoded TLVs preceding the signature TLV. Do not add a second control-type byte outside this record. For RESP, the signature TLV is 0x8007; for FINISH_I, it is 0x8004. The common 44-byte header is not part of the signature input; its version and handshake_id are bound explicitly as shown.
 
 The signature TLV is omitted entirely from the canonical payload used for signing. The signature algorithm is Ed25519 and signature length is exactly 64 bytes. Implementations MUST sign and verify the exact canonical byte sequence, not a reserialized map whose ordering is ambiguous.
 
@@ -90,7 +92,7 @@ Required TLVs:
 
 | Type | Field | Size / format |
 |---:|---|---|
-| 0x8001 | responder_certificate_chain | uint32 length-prefixed DER certificates, leaf first; total <= 16 KiB |
+| 0x8001 | responder_certificate_chain | `uint32_be(count)` followed by `count` repetitions of `uint32_be(cert_length) || DER_certificate`; leaf first; count >= 1; total TLV value <= 16 KiB |
 | 0x8002 | responder_status_evidence | uint32 length-prefixed Router-CA-signed status object; total <= 4 KiB |
 | 0x8003 | nonce_r | 32 CSPRNG bytes |
 | 0x8004 | ephemeral_x25519_r | 32-byte X25519 public key |
@@ -115,10 +117,10 @@ Derive 32 bytes for each label. Handshake keys protect FINISH_I/FINISH_R; data k
 
 FINISH_I is AES-256-GCM protected under the initiator-to-responder handshake key, with header key_epoch=0, sequence_number=0, and nonce `uint32_be(0) || uint64_be(0)`. The exchange_id in the common header is still the handshake_id for this message. AAD is the exact common header plus outer IPv6 addresses and UDP ports. The decrypted control payload MUST contain:
 
-- 0x8001 initiator_certificate_chain: DER chain, leaf first, total <= 16 KiB.
+- 0x8001 initiator_certificate_chain: `uint32_be(count)` followed by `count` repetitions of `uint32_be(cert_length) || DER_certificate`; leaf first; count >= 1; total TLV value <= 16 KiB.
 - 0x8002 initiator_status_evidence: Router-CA-signed status object, total <= 4 KiB.
 - 0x8003 transcript_hash: exactly 32 bytes, SHA-256 over INIT-with-cookie and RESP datagrams.
-- 0x8004 initiator_signature: exactly 64 bytes, Ed25519 signature over the Section 2.1 canonical signature input with control_type FINISH_I and the canonical decrypted payload excluding this signature TLV.
+- 0x8004 initiator_signature: exactly 64 bytes, Ed25519 signature over the Section 2.1 canonical signature input, using the exact decrypted control record with this signature TLV omitted.
 
 The responder MUST validate the initiator's certificate, fingerprint, endpoint binding, status evidence freshness/signature, transcript hash, and signature. It MUST NOT mark the peer ACTIVE or install routes before every check succeeds. If the responder has no valid Router-CA status evidence, it MUST reject new sessions.
 
