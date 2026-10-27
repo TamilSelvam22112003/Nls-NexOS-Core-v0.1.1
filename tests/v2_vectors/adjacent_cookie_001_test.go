@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"os"
@@ -20,12 +21,12 @@ type adjacentCookieVector struct {
 		DestinationPort uint16 `json:"destination_udp_port"`
 	} `json:"outer_tuple"`
 	Inputs struct {
-		Secret          string `json:"cookie_secret_hex"`
-		HandshakeID     string `json:"handshake_id_hex"`
-		NonceI           string `json:"nonce_i_hex"`
-		EphemeralPrivate string `json:"ephemeral_x25519_private_hex"`
-		EphemeralPublic  string `json:"ephemeral_x25519_public_hex"`
-		TimeBucket       uint64 `json:"time_bucket"`
+		Secret            string `json:"cookie_secret_hex"`
+		HandshakeID       string `json:"handshake_id_hex"`
+		NonceI             string `json:"nonce_i_hex"`
+		EphemeralPrivate   string `json:"ephemeral_x25519_private_hex"`
+		EphemeralPublic    string `json:"ephemeral_x25519_public_hex"`
+		TimeBucket         uint64 `json:"time_bucket"`
 	} `json:"test_only_inputs"`
 	Expected struct {
 		MACInput string `json:"mac_input_hex"`
@@ -46,6 +47,15 @@ func loadAdjacentCookieVector(t *testing.T) adjacentCookieVector {
 		t.Fatal(err)
 	}
 	return v
+}
+
+func hexBytes(t *testing.T, value string) []byte {
+	t.Helper()
+	got, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
 }
 
 func cookieInput(source, destination []byte, sourcePort, destinationPort uint16, handshakeID, nonceI, ephemeralPublic []byte, bucket uint64) []byte {
@@ -77,29 +87,30 @@ func TestAdjacentHopCookie001(t *testing.T) {
 	if source == nil || destination == nil {
 		t.Fatal("cookie vector endpoints must be IPv6 addresses")
 	}
-	secret := decodeHex(t, v.Inputs.Secret)
-	handshakeID := decodeHex(t, v.Inputs.HandshakeID)
-	nonceI := decodeHex(t, v.Inputs.NonceI)
-	privateKey, err := ecdh.X25519().NewPrivateKey(decodeHex(t, v.Inputs.EphemeralPrivate))
+	secret := hexBytes(t, v.Inputs.Secret)
+	handshakeID := hexBytes(t, v.Inputs.HandshakeID)
+	nonceI := hexBytes(t, v.Inputs.NonceI)
+	privateKey, err := ecdh.X25519().NewPrivateKey(hexBytes(t, v.Inputs.EphemeralPrivate))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ephemeralPublic := privateKey.PublicKey().Bytes()
-	if !bytes.Equal(ephemeralPublic, decodeHex(t, v.Inputs.EphemeralPublic)) {
+	if !bytes.Equal(ephemeralPublic, hexBytes(t, v.Inputs.EphemeralPublic)) {
 		t.Fatal("X25519 public key mismatch")
 	}
 
 	input := cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket)
-	if !bytes.Equal(input, decodeHex(t, v.Expected.MACInput)) {
-		t.Fatal("cookie MAC input mismatch")
+	if !bytes.Equal(input, hexBytes(t, v.Expected.MACInput)) {
+		t.Fatalf("cookie MAC input mismatch\ngot:  %x\nwant: %s", input, v.Expected.MACInput)
 	}
 	mac := cookieMAC(secret, input)
-	if !bytes.Equal(mac, decodeHex(t, v.Expected.MAC)) {
+	if !bytes.Equal(mac, hexBytes(t, v.Expected.MAC)) {
 		t.Fatal("HMAC-SHA-256 cookie MAC mismatch")
 	}
-	cookie := append(make([]byte, 8), mac...)
-	binary.BigEndian.PutUint64(cookie[:8], v.Inputs.TimeBucket)
-	if len(cookie) != v.Expected.Length || !bytes.Equal(cookie, decodeHex(t, v.Expected.Cookie)) {
+	cookie := make([]byte, 8, 8+len(mac))
+	binary.BigEndian.PutUint64(cookie, v.Inputs.TimeBucket)
+	cookie = append(cookie, mac...)
+	if len(cookie) != v.Expected.Length || !bytes.Equal(cookie, hexBytes(t, v.Expected.Cookie)) {
 		t.Fatal("40-byte cookie mismatch")
 	}
 
