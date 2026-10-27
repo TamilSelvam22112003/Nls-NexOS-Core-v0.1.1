@@ -57,6 +57,11 @@ The handshake draft's signature formula redundantly named control_type outside a
 
 **Resolution:** the signature input now binds the version and handshake_id once, followed by the canonical control record with the signature TLV omitted and the ordered outer IPv6/UDP tuple. The certificate-chain value is uint32_be(count) followed by repeated uint32_be(cert_length) || DER_certificate entries, leaf first. Byte-exact adjacent-hop handshake/cookie vectors must still verify these rules independently.
 
+### F-11 — FINISH_I status evidence length framing was implicit (medium; clarified)
+RESP explicitly described status evidence as uint32-length-prefixed, while FINISH_I only said “Router-CA-signed status object.” This could lead to different field bytes even when the same N2ST object is conveyed.
+
+**Resolution:** FINISH_I TLV 0x8002 now uses `uint32_be(status_object_length) || status_object`, with length exactly 304 and exact TLV value length 308 bytes. The message-schema validator enforces this framing, but signature/freshness verification remains a separate authenticated-handshake responsibility.
+
 ## Release gates
 
 1. Review and freeze the candidate destination envelope, destination endpoint handshake, and Router-CA status profiles; preserve v1 unchanged.
