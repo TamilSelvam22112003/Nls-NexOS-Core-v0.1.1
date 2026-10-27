@@ -178,3 +178,111 @@ func TestStatusTrackerRejectsRollbackEquivocationAndRevokedReactivation(t *testi
 		t.Fatal("revocation state was not preserved")
 	}
 }
+
+
+func makeRouterCertificateFixture(t *testing.T, now time.Time) (*x509.Certificate, *x509.CertPool, ed25519.PrivateKey, StatusEvidence) {
+	t.Helper()
+	rootPublic, rootPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "NLS v2 test Router-CA"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(2 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		SignatureAlgorithm:    x509.PureEd25519,
+	}
+	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, rootPublic, rootPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCertificate, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	leafPublic, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(0x1234),
+		Subject:               pkix.Name{CommonName: "NLS v2 test router"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		SignatureAlgorithm:    x509.PureEd25519,
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, rootCertificate, leafPublic, rootPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(rootCertificate)
+
+	statusSeed := bytes.Repeat([]byte{0x5a}, ed25519.SeedSize)
+	statusPrivate := ed25519.NewKeyFromSeed(statusSeed)
+	identityFingerprint := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
+	certificateFingerprint := sha256.Sum256(leaf.Raw)
+	evidence := StatusEvidence{
+		State:                  StatusActive,
+		IdentityFingerprint:    identityFingerprint,
+		CertificateFingerprint: certificateFingerprint,
+		CertificateSerial:      leaf.SerialNumber.Uint64(),
+		Generation:             1,
+		IssuedAt:               now.Add(-time.Second).UTC(),
+		ExpiresAt:              now.Add(299 * time.Second).UTC(),
+		Endpoints: []StatusEndpoint{{
+			Address: netip.MustParseAddr("2001:db8::10"),
+			Port:    4242,
+		}},
+	}
+	return leaf, roots, statusPrivate, evidence
+}
+
+func TestParseAndVerifyRouterStatusObjectV2BindsCertificateAndChain(t *testing.T) {
+	now := time.Unix(1793099850, 0).UTC()
+	leaf, roots, statusPrivate, evidence := makeRouterCertificateFixture(t, now)
+	object, err := MarshalStatusObjectV2(evidence, statusPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusPublic := statusPrivate.Public().(ed25519.PublicKey)
+	verified, err := ParseAndVerifyRouterStatusObjectV2(object, statusPublic, leaf, roots, nil, now, 300*time.Second, 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verified.verified {
+		t.Fatal("combined verifier did not return a verified status")
+	}
+
+	wrongRoot := x509.NewCertPool()
+	_, wrongRootPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = wrongRootPrivate
+	if _, err := ParseAndVerifyRouterStatusObjectV2(object, statusPublic, leaf, wrongRoot, nil, now, 300*time.Second, 30*time.Second); !errors.Is(err, ErrStatusCertificate) {
+		t.Fatalf("wrong CA trust root should be rejected, got %v", err)
+	}
+
+	mismatched := evidence
+	mismatched.CertificateFingerprint[0] ^= 0x80
+	badObject, err := MarshalStatusObjectV2(mismatched, statusPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseAndVerifyRouterStatusObjectV2(badObject, statusPublic, leaf, roots, nil, now, 300*time.Second, 30*time.Second); !errors.Is(err, ErrStatusCertificate) {
+		t.Fatalf("certificate/status fingerprint mismatch should be rejected, got %v", err)
+	}
+}
