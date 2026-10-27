@@ -62,6 +62,11 @@ RESP explicitly described status evidence as uint32-length-prefixed, while FINIS
 
 **Resolution:** FINISH_I TLV 0x8002 now uses `uint32_be(status_object_length) || status_object`, with length exactly 304 and exact TLV value length 308 bytes. The message-schema validator enforces this framing, but signature/freshness verification remains a separate authenticated-handshake responsibility.
 
+### F-11 — Route selection was missing for opaque inner destinations (critical; design correction added)
+The relay procedure said to select a next hop after decrypting the hop envelope, but the decrypted plaintext carried only previous-hop identity/locator and the destination-encrypted inner envelope. A transit relay cannot inspect an end-to-end encrypted destination packet to infer the next hop. That made the described forwarding loop incomplete.
+
+**Resolution:** the encrypted hop plaintext now includes a separate 16-byte opaque `route_token`. Each relay resolves it only through a generation-checked route binding installed via an authenticated control plane; the binding selects an authorized next-hop identity or a local-terminal action. The route token is preserved while the adjacent-hop envelope is rewrapped. Packet data cannot install route mappings. The route-binding control-message schema and controller/registry integration remain implementation gates; no live forwarding claim is made yet.
+
 ## Release gates
 
 1. Review and freeze the candidate destination envelope, destination endpoint handshake, and Router-CA status profiles; preserve v1 unchanged.
