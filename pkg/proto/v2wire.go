@@ -281,6 +281,11 @@ func makeV2AAD(header []byte, outer OuterTuple) []byte {
 	return aad
 }
 
+// ValidateOuterTuple checks that a packet's outer IPv6/UDP tuple is usable for ordinary forwarding.
+func ValidateOuterTuple(outer OuterTuple) error {
+	return validateOuterTuple(outer)
+}
+
 func validateOuterTuple(outer OuterTuple) error {
 	if !outer.SourceIPv6.Is6() || outer.SourceIPv6.Is4In6() ||
 		!outer.DestinationIPv6.Is6() || outer.DestinationIPv6.Is4In6() ||
