@@ -2,7 +2,7 @@
 
 - Status: review findings; proposal only, not a frozen protocol contract.
 - Scope: `NLS_V2_END_TO_END_WORKFLOW.md`, `NLS_V2_WIRE_SPEC_DRAFT.md`, `NLS_V2_HANDSHAKE_CONTROL_DRAFT.md`, `NLS_V2_WORKFLOW.md`, `INTEGRATION_IMPACT_ANALYSIS.md`, and `SPEC_ERRATA.md`.
-- The branch contains standalone v2 `pkg/proto` primitives and tests; the full live handshake/TUN/forwarding path is not integrated. The NLS v1 wire contract remains unchanged.
+- The branch contains standalone v2 status, framing/AEAD/hop-codec, stateless-cookie and canonical control/TLV codec primitives with tests under `pkg/proto`; the full live handshake/session manager and TUN/forwarding path are not integrated. The NLS v1 wire contract remains unchanged.
 
 ## Findings
 
@@ -42,7 +42,7 @@ The TUN/socket shim carries NLS data but does not automatically protect native O
 **Disposition:** preserve the existing wording: shim-first; no claim that routing daemons or application protocols are secured unless a tested integration actually carries/protects them.
 
 ### F-07 — Handshake transcript vectors remain incomplete (blocking)
-The status-object and destination data-envelope fixtures have cross-language checks. A deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier have been added for the destination endpoint handshake, including signatures, transcript, X25519, HKDF, and finish AEAD. A separate adjacent-hop cookie vector now has Go and Python verifiers for the HMAC input/MAC and binding-mutation negatives. CI verification of the newest fixture commits is pending. The full adjacent-hop INIT/RESP/FINISH transcript vector and broader parser/policy negatives remain absent. The first cookie-vector CI run caught a missing ASCII `2` byte in the fixture's expected `NLS2-COOKIE\0` input hex; that fixture-only typo is corrected, and a fresh CI result is pending.
+The status-object and destination data-envelope fixtures have cross-language checks. A deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier have been added for the destination endpoint handshake, including signatures, transcript, X25519, HKDF, and finish AEAD. The stateless adjacent-hop cookie now has a shared Go Issue/Verify primitive and tests plus standalone Go/Python fixture verifiers. A canonical control/TLV codec and malformed-record tests are also present. CI for the latest cookie/control-primitive commits is running; the full adjacent-hop INIT/RESP/FINISH transcript/state-machine integration and broader parser/policy adversarial suite remain open. The first cookie-vector CI run caught a missing ASCII `2` byte in the fixture's expected `NLS2-COOKIE\0` input hex; that fixture-only typo is corrected, and a fresh CI result is pending.
 
 **Disposition:** use `NLS_V2_CRYPTO_VECTORS_PLAN.md` as the checklist. No interoperability claim until both repositories consume the same fixtures and the complete positive/negative handshake suite passes.
 
@@ -69,4 +69,4 @@ The handshake draft's signature formula redundantly named control_type outside a
 
 ## Attacker-perspective conclusion
 
-The outer IPv6/UDP relay endpoints, lengths, timing, and traffic volumes remain observable. A compromised authorized relay can observe its own adjacent-hop metadata and can drop, delay, reorder, or selectively forward traffic. A compromised Router-CA can misissue identity/status evidence. The status and destination-envelope vectors verify limited byte-level behavior only; they do not prove destination confidentiality, replay safety across restart, or full interoperability. No runtime protocol code changed in this work.
+The outer IPv6/UDP relay endpoints, lengths, timing, and traffic volumes remain observable. A compromised authorized relay can observe its own adjacent-hop metadata and can drop, delay, reorder, or selectively forward traffic. A compromised Router-CA can misissue identity/status evidence. The standalone primitives and synthetic vectors verify limited byte-level behavior only; they do not prove full-handshake interoperability, replay safety across restart in a live service, destination confidentiality through a running router path, or production security.
