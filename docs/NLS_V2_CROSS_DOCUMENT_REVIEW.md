@@ -53,3 +53,7 @@ The current signature input and transcript hash are specified textually but no i
 ## Attacker-perspective conclusion
 
 The outer IPv6/UDP relay endpoints, lengths, timing, and traffic volumes remain observable. A compromised authorized relay can observe its own adjacent-hop metadata and can drop, delay, reorder, or selectively forward traffic. A compromised Router-CA can misissue identity/status evidence. These drafts do not yet prove destination confidentiality, replay safety across restart, or interoperability. The corrected length rule removes one concrete ambiguity; it does not close the remaining blockers.
+
+## Profile-draft follow-up (2026-10-27)
+
+Two additional proposal documents now exist: NLS_V2_DESTINATION_PROTECTION_PROFILE_DRAFT.md and NLS_V2_ROUTER_CA_STATUS_PROFILE_DRAFT.md. They make the design choices more concrete but do not close the blockers by themselves. Destination-protection binary fields, transcript encoding, key lifecycle and replay-window parameters remain to be frozen. The status profile proposes deterministic CBOR plus COSE_Sign1, but certificate extensions, CA key rotation, generation persistence/HA and compatibility with the current Router-CA implementation still require review. No runtime code or executable golden vectors were added by these profile drafts.
