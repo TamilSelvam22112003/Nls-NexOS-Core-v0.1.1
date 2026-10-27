@@ -11,5 +11,7 @@
 - Added docs/ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md: fixed-width signed status evidence format, endpoint binding, freshness and generation rules; certificate/CA integration remains a review gate.
 - Documentation only; v1 wire contract and runtime code unchanged. The v2 drafts are not frozen and have unresolved blockers.
 
+- Added destination-protection and Router-CA status profile drafts; not frozen or implemented.
+
 ## v0.1.1
 - Specification and scaffolding baseline only; no feature implementation.
