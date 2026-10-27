@@ -20,12 +20,12 @@ type adjacentCookieVector struct {
 		DestinationPort uint16 `json:"destination_udp_port"`
 	} `json:"outer_tuple"`
 	Inputs struct {
-		Secret            string `json:"cookie_secret_hex"`
-		HandshakeID       string `json:"handshake_id_hex"`
-		NonceI             string `json:"nonce_i_hex"`
-		EphemeralPrivate   string `json:"ephemeral_x25519_private_hex"`
-		EphemeralPublic    string `json:"ephemeral_x25519_public_hex"`
-		TimeBucket         uint64 `json:"time_bucket"`
+		Secret          string `json:"cookie_secret_hex"`
+		HandshakeID     string `json:"handshake_id_hex"`
+		NonceI           string `json:"nonce_i_hex"`
+		EphemeralPrivate string `json:"ephemeral_x25519_private_hex"`
+		EphemeralPublic  string `json:"ephemeral_x25519_public_hex"`
+		TimeBucket       uint64 `json:"time_bucket"`
 	} `json:"test_only_inputs"`
 	Expected struct {
 		MACInput string `json:"mac_input_hex"`
@@ -105,6 +105,8 @@ func TestAdjacentHopCookie001(t *testing.T) {
 
 	changedSource := append([]byte(nil), source...)
 	changedSource[15] ^= 1
+	changedDestination := append([]byte(nil), destination...)
+	changedDestination[15] ^= 1
 	changedID := append([]byte(nil), handshakeID...)
 	changedID[0] ^= 1
 	changedNonce := append([]byte(nil), nonceI...)
@@ -115,10 +117,13 @@ func TestAdjacentHopCookie001(t *testing.T) {
 	changedSecret[0] ^= 1
 	cases := [][]byte{
 		cookieInput(changedSource, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, changedDestination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort+1, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
 		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort+1, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
 		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, changedID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
 		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, changedNonce, ephemeralPublic, v.Inputs.TimeBucket),
 		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, changedPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket+1),
 	}
 	for i, changedInput := range cases {
 		if hmac.Equal(cookieMAC(secret, changedInput), mac) {
