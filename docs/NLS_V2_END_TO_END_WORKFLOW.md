@@ -1,179 +1,137 @@
 # NLS v2 End-to-End Workflow and Routing Integration Plan
 
-**Status:** Engineering workflow and implementation plan; proposal only, not a frozen wire contract.  
-**Compatibility:** NLS v1 remains unchanged. No implicit downgrade from v2 to v1 and no plaintext fallback for traffic classified `PROTECT`.  
+**Status:** Engineering workflow proposal; not a frozen wire contract.  
+**Compatibility:** NLS v1 remains unchanged. No implicit downgrade and no plaintext fallback for traffic classified `PROTECT`.  
 **Initial integration choice:** TUN/socket shim over the existing routed IPv6 underlay (A1).  
-**First-contact choice:** random, short-lived opaque token used for bounded demultiplexing only (B1).  
-**Normative byte formats:** the linked wire, adjacent-hop handshake, destination-handshake, destination-envelope, and Router-CA status drafts below govern their respective fields; this document describes their intended end-to-end workflow and component responsibilities.
+**First-contact choice:** random, short-lived opaque token for bounded demultiplexing only (B1).  
+**Scope:** define how enrollment, Router-CA trust, adjacent-hop protection, destination protection, route selection and Linux/FRR fit together. This document does not claim the live NLS data path is complete.
 
 ## 1. Security model and packet boundaries
 
-NLS v2 uses two distinct protections:
+NLS v2 proposes two separate cryptographic protections:
 
-1. **Adjacent-hop protection** authenticates a neighboring NLS router and encrypts hop-local metadata for that receiver. Each transit relay terminates only its own adjacent-hop layer, checks the previous neighbor/session, then constructs a fresh hop envelope for the next relay.
-2. **Destination protection** encrypts the original inner IP packet for the destination NLS security endpoint. Transit relays forward that inner envelope opaquely. Only the source and destination security endpoints hold the end-to-end traffic keys.
+1. **Adjacent-hop protection:** each NLS relay authenticates the immediate NLS peer and decrypts only the hop envelope addressed to it. It validates the sender/session, extracts only authorized hop metadata, selects an authorized next relay and constructs a new hop envelope using a directional key for that next relay.
+2. **Destination protection:** the original inner IPv4/IPv6 packet is encrypted for the destination NLS security endpoint. Transit relays carry this inner envelope opaquely and do not possess its destination traffic key.
 
-The outer IPv6 source and destination fields are **not encrypted in place**. Ordinary IPv6 forwarding needs routable underlay addresses. Each transmitted datagram therefore uses the current relay's routable WAN address as outer source and the next relay's routable WAN address as outer destination. The clear outer header and UDP ports, NLS framing, packet lengths, timing and volume remain observable to the transit network. The immediately receiving relay can observe the previous relay's outer address.
+A conventional IPv6 underlay cannot route using an encrypted or non-routable outer source/destination address. Every UDP datagram therefore needs a real routable underlay IPv6 source (the current relay's WAN endpoint) and destination (the next relay's WAN endpoint). Those outer addresses, UDP ports, packet sizes, timing and traffic volume remain visible. NLS protects selected source-locator and inner-packet fields inside the envelope; it does not encrypt the outer IPv6 header in place.
 
-The protected logical source locator is a field inside the authenticated encrypted hop plaintext. It is not the outer IPv6 source address, not a route, and not proof of identity by itself. A relay must validate it against the already authenticated peer identity and the Router-CA-authorized outer endpoint.
+The v1 RDR, v1 framing and v1 services remain unchanged. NLS v2 is a separately negotiated profile.
 
-The hop plaintext also carries a separate 16-byte opaque `route_token`. This resolves a necessary forwarding question: because the original destination packet is destination-encrypted, a transit relay cannot inspect it to choose the next hop. The relay looks up the route token in a local, generation-checked binding installed via authenticated control-plane provisioning; the binding names an authorized next-hop router or a local-terminal action. The route token is not an IP address, session token, or identity fingerprint. Missing, expired, unauthorized, or conflicting route bindings fail closed. The control-plane route-binding message encoding is still an implementation gate.
+## 2. Boot, enrollment and readiness
 
-### Packet path (conceptual)
+1. Load the pinned Router-CA trust anchor, routable WAN endpoint configuration, NLS UDP port, permitted roles, protected prefixes, MTU policy, rate limits and fail-closed policy.
+2. Establish ordinary IPv6 underlay reachability to the Router-CA and candidate NLS peers. Existing Linux routing and FRR provide reachability; NLS does not make an unroutable CA endpoint reachable by hiding its address.
+3. Enroll or refresh the router identity with Router-CA. Validate the leaf certificate, Router-CA-signed v2 status evidence, authorized WAN endpoint tuple, status generation, freshness and local policy. Identity-signing keys, ephemeral key-agreement keys, adjacent-hop traffic keys and destination traffic keys are distinct roles.
+4. Start NLS listeners only after required trust anchors, clocks, permissions, configuration and resource bounds validate. New sessions fail closed if required fresh trust evidence cannot be obtained.
+5. Maintain separate state for the IP routing table/OSPF LSDB, cryptographic peer trust, first-contact pending tokens, adjacent-hop sessions, destination sessions and packet replay windows. A route or OSPF neighbor entry alone is never proof of cryptographic identity.
 
-```text
-Client
-  |
-  | original IPv4/IPv6 packet
-  v
-Ingress NLS router
-  | destination-protects original packet for destination security endpoint
-  | creates hop envelope for R2 using directional key R1->R2
-  | outer IPv6: R1-WAN -> R2-WAN
-  v
-Transit R2
-  | authenticates/decrypts only R1->R2 hop envelope
-  | validates R1 identity/session/locator/replay/policy
-  | leaves destination-protected inner packet opaque
-  | creates a fresh hop envelope for R3 using key R2->R3
-  | outer IPv6: R2-WAN -> R3-WAN
-  v
-Transit R3 ... (same per-hop operation)
-  |
-  v
-Destination NLS security endpoint
-  | authenticates/decrypts final adjacent-hop envelope
-  | validates final relay and removes hop wrapper
-  | decrypts destination-protected inner packet
-  | forwards original packet to destination LAN/server
-  v
-Server
-```
+## 3. First contact and adjacent-hop session
 
-If the protected application payload must remain confidential after the destination router forwards the inner packet to a separate server, use the application's own end-to-end protection (for example, correctly configured TLS) or define a separate server endpoint profile. NLS destination-router protection must not be described as server-level encryption unless the server itself is the cryptographic endpoint.
+The adjacent-hop control-message draft defines exact message encodings; this section records the intended control flow.
 
-## 2. Boot, registration, and readiness
-
-1. **Load trust anchors and local configuration.** The router loads a pinned Router-CA trust anchor, configured underlay/WAN endpoints, permitted roles, protected prefixes, transport port, MTU policy and fail-closed policy. Private keys must be permission-restricted and must never be included in logs, status responses, or repository fixtures.
-2. **Establish underlay reachability.** Existing Linux routing and FRR provide routable IPv6 reachability to configured peers and the Router-CA. NLS cannot contact a CA or next hop through an address that the ordinary forwarding plane cannot route.
-3. **Enroll or refresh identity.** The router proves control of its identity key to Router-CA, obtains or renews its certificate and authorized endpoint information, and receives current policy/status evidence. Identity signing keys, ephemeral key-agreement keys, adjacent-hop traffic keys, and destination traffic keys have separate roles.
-4. **Validate local state.** The router validates certificate/status freshness, local policy, required endpoints, clock health, key-storage permissions, and resource limits. It enters a state that permits protected forwarding only after the necessary services are ready.
-5. **Keep routing state separate.** OSPF/OSPFv3 LSDB entries and ordinary routing entries may provide underlay reachability, but neither is cryptographic trust. A router must not promote an identity or install a protected route merely because an address appears in the LSDB.
-
-The current candidate Router-CA status profile is a fixed-size signed v2 status object. It is a proposal requiring real-CA issuance/registry integration and operational review. The v1 RDR and v1 control messages must not be silently reinterpreted as v2 status evidence.
-
-## 3. First contact and adjacent-hop session establishment
-
-The adjacent-hop handshake follows the candidate sequence defined in `NLS_V2_HANDSHAKE_CONTROL_DRAFT.md`:
-
-`INIT -> RETRY(cookie) -> INIT-with-cookie -> RESP -> FINISH_I -> FINISH_R`
-
-1. The initiator resolves the intended peer's authenticated identity and routable endpoint through configured policy/directory/Router-CA information. It validates the peer's status object, certificate binding, endpoint authorization, and status freshness.
-2. It generates a cryptographically random `handshake_id`, nonce and ephemeral X25519 key pair. The temporary token is opaque and short-lived; it is not an IPv6 address and does not authenticate a router.
-3. The initiator sends INIT to the responder's routable outer IPv6 endpoint. The responder applies message-size limits and rate limiting, and returns a stateless RETRY cookie by default for an untrusted source.
-4. The cookie is bound to the outer IPv6 source/destination, UDP source/destination ports, handshake ID, initiator nonce, initiator ephemeral public key and a time bucket. Before the cookie is valid, the responder must not allocate per-peer handshake state or perform expensive certificate/X25519 work.
-5. After cookie validation, the responder validates the initiator's certificate/status and endpoint authorization, generates its ephemeral key and nonce, and sends signed RESP material. The signatures and authenticated transcript bind the identities, endpoints, nonces, ephemeral keys, suite and protocol version.
-6. Both sides compute the X25519 shared secret, reject an all-zero shared secret, and derive independent directional keys via HKDF-SHA-256 using the specified transcript/salt/info. Signing keys are not traffic keys; a static public key is not used to encrypt every data packet.
-7. FINISH_I and FINISH_R confirm the transcript/key possession under the separate directional handshake keys. The responder's session token becomes active only after FINISH_R is authenticated and accepted. The peers install bounded session and replay state atomically only after successful confirmation.
-8. If a handshake fails, times out, mismatches status/identity/endpoint, or exceeds a resource limit, the pending state is discarded, temporary secrets are erased best-effort, the peer is not trusted, and protected traffic is dropped or boundedly queued according to local policy. No plaintext fallback is allowed.
-9. Handshake/session state is bounded by lifetime, byte and packet caps. The current lifecycle proposal forbids session resumption after process restart and leaves authenticated KEY_UPDATE unsupported. A fresh full handshake is required after restart and before any configured session limit.
-
-Cookie, handshake and transcript formats are drafts. The deterministic cookie test covers its specific MAC construction; it does not establish full handshake interoperability.
+1. The initiator resolves the peer identity and routable UDP endpoint from configured policy/directory/Router-CA information. It validates the peer certificate, signed status object, status generation and endpoint authorization.
+2. Generate a random handshake ID, initiator nonce and ephemeral X25519 key pair. Any first-contact token is a short-lived opaque demultiplexing value. It is not an IP address, route, identity credential or replacement for a routable IPv6 endpoint.
+3. Send INIT to the responder's routable IPv6 endpoint. Validate strict lengths/version/type before parsing TLVs. Apply ingress/global limits.
+4. For untrusted INIT messages, issue a stateless RETRY cookie bound to the observed outer IPv6 source/destination, UDP source/destination ports, handshake ID, initiator nonce, initiator ephemeral public key and bounded time bucket. Before cookie validation, do not allocate per-peer state or perform expensive certificate/X25519 work.
+5. After cookie validation, validate the initiator's certificate/status/endpoint. The responder generates its fresh ephemeral key and nonce, then sends signed RESP. The signature/transcript bind both identities, authorized endpoints, nonces, ephemeral keys, suite and protocol version.
+6. Both endpoints compute X25519, reject an all-zero shared secret and derive separate directional keys using the specified HKDF-SHA-256 transcript context. An identity-signing key is not used as a traffic key and public-key encryption is not performed on every data packet.
+7. FINISH_I and FINISH_R confirm possession of the derived keys. The responder's opaque session token becomes active only after the initiator authenticates FINISH_R. Install session/replay state atomically after completed confirmation.
+8. On failure, expiry, identity/status/endpoint mismatch, replay or a resource cap, discard pending state and temporary secrets best-effort, do not establish trust, and drop or boundedly queue PROTECT traffic. Plaintext fallback is forbidden.
+9. Sessions have bounded lifetime, bytes and packet counts. The candidate lifecycle forbids resumption after process restart and leaves KEY_UPDATE unsupported; a new full handshake is required after restart and before any limit is reached.
 
 ## 4. Destination endpoint session
 
-Adjacent-hop keys do not establish destination-protection keys. The source and destination security endpoints use the separate candidate workflow in `NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md` and `NLS_V2_DESTINATION_PROTECTION_PROFILE.md`.
+1. The source NLS security endpoint validates the destination endpoint's certificate and signed status evidence, including the destination identity fingerprint, status generation, freshness and endpoint role.
+2. Establish a separate source-to-destination handshake with fresh nonces and ephemeral X25519 keys. This transcript domain and its key-derivation labels are separate from the adjacent-hop handshake.
+3. Both endpoints validate the handshake transcript and signatures, derive destination-scoped directional keys and install a session only after authenticated FINISH confirmation.
+4. Encrypt the complete original IPv4/IPv6 packet (including original source and destination addresses) into the destination envelope. Bind recipient identity, flow/session ID, sequence, timestamp/policy fields and framing into AEAD authentication exactly as specified by the selected destination-envelope profile.
+5. Transit relays forward the destination envelope as opaque bytes. They do not decrypt it, alter it, or receive destination traffic keys.
+6. Return traffic uses the reverse destination directional key and an independently maintained sequence/replay state, plus independently established hop protection along the return route.
+7. Unknown session, stale/revoked status, wrong recipient, invalid tag, replay, invalid inner IP packet or policy denial means drop. A successful cryptographic check does not authorize route installation or unrestricted forwarding.
 
-1. The source endpoint validates the destination endpoint's certificate and signed status evidence, including current status generation and authorized role.
-2. The source creates a distinct end-to-end handshake with fresh nonces and ephemeral X25519 keys, using a separate transcript domain and key-derivation labels from the adjacent-hop handshake.
-3. The destination validates the source identity/status and binds the handshake to the selected endpoint/session. Both endpoints verify signatures/transcript and derive destination-scoped directional AEAD keys.
-4. The session is installed only after authenticated FINISH confirmation. Transit routers may forward these records as opaque destination-protected content but must not terminate the exchange or receive its traffic keys.
-5. The source encrypts a complete original IPv4/IPv6 packet into the destination envelope. The destination envelope's recipient identity, session, direction, epoch, sequence and AEAD tag are verified before plaintext is released. The receiver checks the inner IP packet and local forwarding policy before delivering it.
-6. For return traffic, the destination endpoint uses the reverse directional destination key and an independently maintained replay/sequence space. Hop protection is also constructed independently along the return path.
-7. Unknown session, stale/revoked status, wrong recipient, invalid tag, replay, invalid inner IP or policy denial means drop. A successful cryptographic check does not grant route-installation or general forwarding authorization.
+## 5. Per-hop packet forwarding
 
-The destination envelope currently has a candidate 72-byte N2DE header and a synthetic AES-GCM vector. The endpoint handshake still requires complete independent byte-exact vectors and integration tests. The destination-protection profile is not yet production-ready.
+1. Classify each ingress flow under explicit policy as `PROTECT`, `BYPASS` or `DROP`. A cryptographic failure cannot convert `PROTECT` traffic to `BYPASS`.
+2. For `PROTECT`, obtain a valid destination session and encapsulate the complete inner IP packet for the destination endpoint.
+3. Select a next-hop NLS relay using an authorized route/policy binding. The route chooses a transport destination; it does not confer trust.
+4. Build the hop plaintext containing required sender/neighbor/session context, logical locator/forwarding metadata and the opaque destination envelope. Do not expose original client/server IP addresses outside what the wire profile explicitly permits.
+5. Allocate a unique sequence number atomically under the outbound directional adjacent-hop key. Construct the exact NLS v2 common header; use the profile's specified payload length and nonce construction. Authenticate the required header and observed outer IPv6/UDP tuple as AAD.
+6. Transmit over UDP with the current relay's routable IPv6 address as outer source and next relay's routable IPv6 address as outer destination. Respect the configured packet cap and IPv6 path-MTU/ICMPv6 policy.
+7. The next relay validates framing and bounds before session lookup, authenticates/decrypts the hop envelope, checks peer identity/status/endpoint and replay window, verifies locator-to-peer binding, then makes a forwarding decision.
+8. The relay wraps the same destination envelope bytes in a fresh hop envelope for the authorized next relay. It uses its own directional key and fresh sequence; it must not decrypt or rewrite the destination envelope.
+9. The destination router authenticates/removes only the final hop layer, then the destination security endpoint authenticates and decrypts the destination envelope. Validate the inner packet and local policy before forwarding it toward the server/host.
 
-## 5. Per-hop forwarding workflow
+## 6. State ownership and tables
 
-For each protected packet:
-
-1. **Ingress policy:** classify traffic as `PROTECT`, explicitly configured `BYPASS`, or `DROP`. A cryptographic failure must not convert `PROTECT` into `BYPASS`.
-2. **Prepare destination protection:** obtain or reuse a valid destination endpoint session. The original client/server IP headers and applicable transport metadata remain encrypted inside the destination envelope.
-3. **Wrap for first relay:** serialize the hop plaintext, including the authenticated previous-hop identity and logical locator, plus the opaque destination envelope. Allocate a unique outbound sequence number.
-4. **Construct framing:** serialize the 44-byte NLS2 header with the correct version/type, session token, key epoch, sequence and exact payload length. For DATA and encrypted controls, payload_length includes ciphertext plus the 16-byte AES-GCM tag.
-5. **Encrypt hop envelope:** construct the nonce from the selected key epoch and sequence as specified by the wire profile. Authenticate the common header and observed outer IPv6/UDP tuple as AAD, and encrypt with the current directional adjacent-hop key.
-6. **Transmit:** send over UDP with the current relay's routable IPv6 address as source and the next relay's routable IPv6 address as destination. Enforce the configured maximum packet size and IPv6 PMTU/ICMPv6 policy.
-7. **Receive:** the next relay validates bounded framing and session lookup, authenticates/decrypts the hop envelope, verifies peer identity/status/endpoint binding and replay window, confirms the locator corresponds to the authenticated peer, and evaluates forwarding policy.
-8. **Rewrap:** the relay chooses an authorized next hop, allocates a unique sequence under its own outbound direction key, builds a fresh envelope with its own authenticated locator, and encrypts with the next hop's directional key. The destination envelope must be copied byte-for-byte.
-9. **Deliver:** the destination router authenticates the last hop, removes only the hop layer, then passes the destination envelope to the local destination security endpoint for authenticated decryption and inner-packet validation.
-
-The outer source seen by a transit network and the receiving relay remains the previous relay's real routable WAN address. The logical source locator inside the hop ciphertext changes per hop; it does not change the outer IPv6 source field and is not used by OSPF to rewrite every data packet's source address.
-
-## 6. Tables and state ownership
-
-| State store | What it owns | What it must never imply |
+| State/table | Owner and responsibility | Must not be confused with |
 |---|---|---|
-| VIP / pending-handshake table | Temporary opaque token, handshake ID, selected endpoint, time bucket, expiry, retry/state and resource-accounting fields | Token is not an IP address, identity proof or trust credential |
-| Trust table | Stable router identity fingerprint, validated certificate/status, authorized endpoints, revocation generation, policy and permitted capabilities | A route, token, public key or LSDB entry alone does not confer trust |
-| Session/replay store | Session token, directional key references, epoch, sequence allocator, replay window, expiry and active/closing state | Session state must not survive process restart in the current lifecycle proposal |
-| Destination-session store | Source/destination identities, end-to-end session ID, destination key references, directional sequence/replay state and expiry | Transit relays may not access destination traffic keys |
-| OSPF/OSPFv3 LSDB | Routing daemon's link-state/topology data | LSDB adjacency is not cryptographic authorization |
-| Router-CA registry/directory | Router enrollment, certificates, endpoint authorization, status generation and audit/revocation records | Never returns private keys or treats a caller as ACTIVE without authenticating and authorizing it |
+| Routing table / OSPF LSDB | Linux kernel/FRR reachability, adjacency, metrics and convergence | Certificate validation or cryptographic trust |
+| Router-CA registry/status | NexOS Core control plane; identity/certificate/status generation/endpoints/revocation evidence | A forwarding route or traffic key |
+| Peer trust cache | NetOS local authenticated peer identity, certificate fingerprint, authorized endpoints, status generation/freshness | Opaque token or raw IP alone |
+| Pending token table | NetOS bounded first-contact demultiplexing; short TTL and one-time consume rules | Routable virtual IPv6 address or long-lived peer identity |
+| Adjacent session table | NetOS directional keys, peer identity, session token, epoch/sequence limits, replay window and expiry | Destination traffic-key state |
+| Destination session table | Source/destination endpoint scoped keys, destination identity, flow/session, replay and expiry | A transit relay's adjacent-hop session |
+| Audit/metrics | Bounded event codes, identity fingerprints and counters | Secrets, decrypted packets or unauthenticated peer claims as verified facts |
 
-Promotion to trusted state requires authenticated certificate/status/endpoint validation and successful handshake confirmation. Session key bytes should not be stored in a printable table or ordinary directory object.
+Use expiry, entry-count bounds, rate limits, atomic updates and generation/rollback checks. Do not store private or derived traffic keys in Router-CA lookup results or logs.
 
-## 7. Routing-protocol integration strategy
+## 7. Routing protocol integration strategy
 
-### Phase 1 — existing routed underlay + TUN/socket shim (initial path)
+### Phase A — routed IPv6 underlay + UDP/socket shim + TUN (first implementation path)
 
-- Let Linux/FRR continue ordinary underlay routing between routable relay endpoints.
-- Carry NLS packet formats over a dedicated NLS socket/UDP transport and then integrate a TUN interface for client packets.
-- Configure protected prefixes and routes explicitly; prevent routing loops and accidental plaintext egress.
-- Test IPv6 neighbor discovery, PMTU/ICMPv6, asymmetric return paths, route changes, ACL/uRPF/NAT interactions, service restart and control-plane failure.
-- Do not change native OSPF/BGP/RIP packet encodings as part of the first data-plane milestone.
+- Leave native OSPFv2, OSPFv3, BGP, RIP/RIPng encodings and peer compatibility unchanged.
+- Let Linux and FRR provide routable reachability to NLS relay endpoints and the Router-CA. Install narrowly scoped routes to relay endpoints outside the protected-prefix route to avoid circular routing dependencies.
+- Implement the v2 UDP/socket path and strict framing/session validation first. Then attach a dedicated TUN interface to carry selected client IPv4/IPv6 packets; configure protected prefixes, policy routing, loop prevention and explicit BYPASS/DROP behavior.
+- Ensure control-plane traffic needed to build the underlay is not accidentally routed into the NLS TUN. Protect Router-CA and relay endpoint reachability from recursive capture by the protected route.
+- Test neighbor discovery, PMTU/ICMPv6, asymmetric return route, route change, service restart, firewall ACL, uRPF, NAT/rebinding policy, packet loops and CA outage before treating the shim as usable.
 
-### Phase 2 — protected routing control traffic (separate workstream)
+### Phase B — protect selected routing/control traffic (separate gated workstream)
 
-For any OSPF/OSPFv3, BGP or RIP/RIPng protection, first decide which packet classes are carried inside NLS and which stay native. The design must specify peer discovery, multicast/broadcast handling where applicable, TTL/hop-limit, neighbor-state transitions, authentication, route authorization, failure/convergence, and interoperability with unmodified peers. An ordinary TUN shim does not automatically secure the native routing protocol.
+- **OSPF/OSPFv3:** decide whether selected control packets are carried within the NLS protected interface or whether an explicit authenticated NLS-neighbor binding is used. Preserve LSDB semantics; independently test multicast behavior, adjacency timers and convergence. An LSDB entry remains non-cryptographic.
+- **BGP:** explicitly choose whether the TCP peering runs over a protected underlay or inside NLS. Specify peer identity, transport reachability, route policy, next-hop semantics and failure behavior.
+- **RIP/RIPng:** explicitly choose whether updates remain native on the underlay or are carried by NLS; test metrics, hop limits, update timers and interoperability with unmodified peers.
+- **Static/default routes:** install underlay routes to NLS relay and Router-CA endpoints before protected-prefix routes; prevent a route for the NLS endpoint from depending on the NLS tunnel it is trying to establish.
+- **IPsec/TLS:** NLS does not replace these protocols or automatically secure their native packets. They may coexist at distinct layers. Document which endpoint terminates each security layer and avoid conflating router identity with application/server identity or accidental double encryption.
 
-- **OSPF/OSPFv3:** keep LSDB as routing state; bind adjacency to validated NLS peer identity through explicit policy; test multicast/neighbor discovery, hello/dead timers and convergence independently.
-- **BGP:** define whether the TCP session is carried inside NLS or merely used over a protected underlay; separately validate route policy and next-hop semantics.
-- **RIP/RIPng:** define whether updates remain native or are carried by a protected mode; test metrics, hop limits and compatibility.
-- **Default routes and static routes:** configure routes to NLS underlay endpoints and protected prefixes without circular dependence. An NLS route must not depend on itself to establish its underlay path.
-- **IPsec and TLS:** NLS does not replace these or automatically secure their native protocols. They may coexist. Define the security endpoint and avoid double-encryption or confusing router identity with application/server identity.
+Native routing integrations are not accepted until each protocol's actual packet path and peer behavior is tested in a reproducible lab. “NLS secures OSPF/BGP/RIP” must not be claimed merely because a TUN data plane is running.
 
-No routing daemon should advertise an authenticated NLS adjacency until peer identity, status and session establishment have succeeded. A route advertisement never substitutes for Router-CA trust.
+## 8. Failure and operational policy
 
-## 8. Failure and policy behavior
+- Malformed/oversized record, unsupported critical field, expired token/cookie, invalid certificate/status, endpoint mismatch, signature/AEAD failure, replay, unknown session/epoch or unauthorized next hop: drop.
+- CA unavailable: do not establish a new protected session when fresh trust evidence is required. Existing-session continuation during an outage must use a documented bounded grace policy; valid revocation evidence invalidates affected trust.
+- Resource pressure: enforce global, interface and source-prefix limits; cap pending handshakes, sessions, directory lookups and replay entries; rate-limit audit output.
+- Concurrent encryption: sequence allocation is atomic; a reserved number is burned after failure. Concurrent replay copies cannot both pass a check-and-mark.
+- Restart/snapshot/fork/hot reload: invalidate all sessions and require a full handshake. Do not resume old session keys or token mappings.
+- MTU/PMTU: calculate overhead from outer IPv6/UDP, NLS common header, hop plaintext, AEAD tag and destination envelope. Honor ICMPv6 Packet Too Big and define the maximum inner packet size; fragmentation is not the normal path.
+- Telemetry must not include private keys, traffic keys, cookie secrets, full decrypted protected packets, or unvalidated fields represented as authenticated identity.
 
-- Invalid format, unsupported version, unknown critical field, length overflow, expired token/cookie, invalid certificate/status, wrong endpoint binding, failed signature/AEAD, replay, unknown session/epoch or unauthorized next hop: drop.
-- CA unavailable: fail closed for new protected sessions when fresh trust evidence is required. Existing-session grace must be explicit, bounded and documented; a valid revocation event terminates affected sessions according to policy.
-- DoS/resource pressure: enforce global, interface and source-prefix rate limits; cap pending handshakes, established sessions, directory lookups and replay entries; avoid expensive certificate/X25519 work until the cookie is validated.
-- Concurrent traffic: atomically allocate sequence numbers and test-and-mark replay windows. Burn a reserved sequence after encryption failure; never reuse it.
-- Restart/snapshot/hot reload: invalidate sessions and require fresh handshakes; never restore old sequence counters without the same protected key state, and the current candidate policy prohibits session resumption entirely.
-- MTU/PMTU: calculate real overhead for outer IPv6+UDP, NLS header, hop plaintext, AEAD tag and destination envelope. Honor ICMPv6 Packet Too Big and define the maximum inner packet size; do not rely on fragmentation as the normal path.
-- Audit: log bounded event codes, peer identity fingerprints and counters. Never log private/traffic keys, cookie secrets, complete decrypted protected packets, or unauthenticated claims as verified identities.
+## 9. Repository/component impact matrix
 
-## 9. Implementation status and required gates
+| Component | Phase A change | Phase B change | Gate |
+|---|---|---|---|
+| `pkg/proto` (shared v2 framing, status, AEAD, hop codec, cookie) | Consume strict codecs and shared golden fixtures | Reuse identical codecs for control traffic | Exact positive/negative vectors, parser/property/fuzz tests |
+| NetOS router daemon | Bounded session manager, UDP/socket loop, then TUN, route policy and fail-closed classifier | Protocol-specific routing traffic binding/encapsulation | Unit and race tests, resource caps, six-node then ten-router lab |
+| NexOS Core Router-CA/registry/directory | Issue/serve canonical status/endpoint evidence and negotiate v2 control capability where used | Routing-policy/peer-role policy extensions | Real-CA certificate/status/revocation and rollback tests |
+| Linux kernel/netlink/route policy | Dedicated TUN, scoped routes, MTU, policy routing, firewall and loop prevention | Per-protocol route mapping where explicitly approved | Reboot/route change/PMTU/no-plaintext-leak tests |
+| FRR OSPF/BGP/RIP | No wire changes; underlay reachability only | Separate, protocol-specific integration and convergence tests | Do not conflate route state with trust |
+| Systemd/config/CLI | Least-privilege service, permissions, explicit endpoint/prefix/limit config, safe restart | Protocol toggles and peer-policy config | Invalid-config/failure/startup tests |
+| CI/lab/performance | Shared fixtures, Go/Python cross-checks, fuzz/race/unit tests, six-node functional IPv6 lab | Ten-router IPv6/FRR, route convergence, control-protocol tests | Functional gates precede separate performance gates |
 
-The repositories contain standalone Go v2 status/framing/AEAD/hop-codec primitives, a stateless cookie Issue/Verify primitive, a canonical control/TLV codec, message-specific control-schema validation, and synthetic tests. These do not by themselves make a running router-to-router NLS system: packet I/O, authenticated adjacent handshake state, destination endpoint handshake/session wiring, trust/session table integration, Linux TUN setup, forwarding policy, and FRR/IPv6 lab validation remain separate milestones.
+## 10. Required acceptance gates
 
-Before calling NLS v2 interoperable:
+1. Independently review and freeze the adjacent-hop handshake/wire, destination handshake/envelope, Router-CA status and lifecycle contracts without changing v1.
+2. Commit shared fixtures for every handshake, signature/transcript, cookie, HKDF output, nonce/AAD, AEAD framing, status/endpoint binding, replay, length error and negative policy case. Both repositories must consume identical fixture bytes.
+3. Pass formatting, build, test, lint, race/concurrency and parser/fuzz gates in both repositories. Record the exact commit and successful CI run.
+4. Implement and test the bounded in-memory adjacent and destination session managers; KEY_UPDATE remains unsupported until separately specified.
+5. Integrate UDP/socket shim, then TUN and policy routes. Test fail-closed behavior, return path, MTU/PMTU, route changes and no plaintext egress.
+6. Pass six-node functional IPv6 topology tests; then ten-router IPv6/FRR integration tests, including reboot/revocation, CA outage, resource exhaustion, route convergence and asymmetric return paths.
+7. Run performance gates separately with reproducible hardware/software, workload, packet size, throughput, latency, CPU, memory and loss measurements.
+8. Obtain independent cryptographic/protocol review before production claims or non-draft release.
 
-1. Freeze aligned wire/status/destination/handshake profiles after independent review.
-2. Add shared positive and negative golden vectors for adjacent INIT/RETRY/RESP/FINISH, cookies and transcript/KDF; destination D_INIT/D_RESP/FINISH; data/header codecs; status/endpoint binding; AEAD/AAD/nonces; replay and malformed-length cases.
-3. Pass both repositories' CI on the same fixtures; no CI failure is ignored or hidden by changing expected output without validating the contract.
-4. Integrate a bounded in-memory adjacent session manager and destination session manager; keep v1 unchanged.
-5. Integrate the socket/TUN shim with fail-closed policy and observable diagnostics.
-6. Pass six-node functional IPv6 topology tests, then ten-router IPv6/FRR tests, including route changes, reboot/revocation, CA outage, resource exhaustion, no plaintext fallback, MTU/PMTU and return path.
-7. Run performance gates separately with recorded hardware/software, workload, CPU, throughput, latency, memory and loss results.
-8. Obtain independent cryptographic and protocol review.
+## 11. Attacker-perspective critique
 
-## 10. Attacker-perspective critique
+The outer relay IPv6 addresses, UDP ports, packet length, timing and traffic volume remain visible and can reveal communication patterns. A compromised authorized relay can observe adjacent-hop information, selectively drop/delay/reorder traffic, or attempt to forward toward an unauthorized next hop. The Router-CA is a trust root; its compromise can enable malicious identity/status issuance. An attacker can flood INIT and status/control endpoints, exhaust bounded resources, exploit parser discrepancies, or force path-MTU failures. Replay/restart bugs could cause nonce reuse or duplicate delivery if the lifecycle invariants are not implemented correctly. Destination endpoint compromise exposes inner traffic at that endpoint. These risks are reasons for the listed tests, not evidence that they have already passed.
 
-The transit network sees real outer relay addresses and traffic-analysis metadata; the destination router sees the inner IP packet after destination decryption; a compromised authorized transit relay can observe its own adjacency, disrupt traffic, and attempt to exploit parser/session defects. A compromised Router-CA can misissue identity/status information. Endpoint compromise exposes plaintext. A nonce reuse, weak state transition, incorrect signature canonicalization, stale revocation cache, route leak, or silent plaintext fallback could defeat intended properties. These risks are why this is an implementation workflow, not a security proof.
+## 12. Change record
 
-## 11. Change record
-
-This document clarifies the intended workflow and staged integration path. It does not freeze v2 wire bytes or claim that a live TUN/router data path or native routing-protocol integration has been completed. NLS v1 remains unchanged.
+This document consolidates the A1/B1 workflow and integration choice. It is a design/integration plan; it does not itself implement the live session manager, UDP forwarding loop, TUN plumbing, native routing-protocol integration, or the six-/ten-router labs. NLS v1 behavior remains unchanged.
