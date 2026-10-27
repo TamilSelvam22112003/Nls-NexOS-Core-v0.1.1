@@ -3,7 +3,6 @@ package proto
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -88,7 +87,7 @@ func TestV2CookieGoldenVector(t *testing.T) {
 	}
 	now := time.Unix(vector.FixedValidationTime, 0)
 	claims := v2CookieClaimsFromVector(t, vector)
-	bucket := binary.BigEndian.Uint64([]byte{0, 0, 0, 0, 3, 0x90, 0x04, 0x72})
+	bucket := vector.Inputs.TimeBucket
 	input := makeV2CookieMACInput(claims, bucket)
 	if !bytes.Equal(input, decodeV2CookieHex(t, vector.Expected.MACInputHex)) {
 		t.Fatal("canonical cookie MAC input differs from the shared vector")
