@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net/netip"
 )
 
 const (
@@ -216,6 +217,13 @@ func validateV2EndpointBinding(value []byte) error {
 	if len(value) != 51 || value[0] != 6 || binary.BigEndian.Uint16(value[17:19]) == 0 ||
 		allZero(value[19:51]) {
 		return fmt.Errorf("%w: endpoint binding encoding", ErrV2ControlSchema)
+	}
+	var addressBytes [16]byte
+	copy(addressBytes[:], value[1:17])
+	address := netip.AddrFrom16(addressBytes)
+	if !address.Is6() || address.Is4In6() || !address.IsGlobalUnicast() ||
+		address.IsUnspecified() || address.IsMulticast() || address.IsLoopback() {
+		return fmt.Errorf("%w: endpoint address is not a valid routable IPv6 endpoint", ErrV2ControlSchema)
 	}
 	return nil
 }
