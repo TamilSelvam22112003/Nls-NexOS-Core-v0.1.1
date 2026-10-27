@@ -16,7 +16,7 @@ The source and destination security endpoints are Router-CA identities, not the 
 
 Candidate establishment reuses the reviewed X25519/Ed25519 primitives but uses a separate end-to-end transcript domain and distinct HKDF labels. The endpoint handshake is carried inside the already authenticated hop-protected forwarding path as opaque control content. Transit relays may forward it but cannot validate or terminate it. The endpoint transcript binds: protocol identifier/version, source and destination router identity fingerprints, source and destination certificate fingerprints, endpoint-status generations, both 32-byte nonces, both ephemeral X25519 public keys, selected suite, and a monotonically unique 16-byte end-to-end session identifier. It MUST NOT bind mutable outer-hop IPv6 addresses/ports because relays legitimately change them.
 
-Use suite 0x0001: Ed25519 signatures, ephemeral X25519, HKDF-SHA-256, AES-256-GCM. Reject all-zero X25519 shared secrets. Authentication signatures use the domain string `NLS2-E2E-HS-SIG\0`; key derivation uses `NLS2-E2E-HS-SALT\0` and distinct labels prefixed with `NLS2 E2E`. Exact handshake messages, signature inputs, and HKDF context encoding are **not yet specified** by this profile and are an explicit implementation blocker. No destination-protection session may be claimed interoperable until the endpoint handshake is separately specified and vector-tested.
+Use suite 0x0001: Ed25519 signatures, ephemeral X25519, HKDF-SHA-256, AES-256-GCM. Reject all-zero X25519 shared secrets. Authentication signatures use the domain string `NLS2-E2E-HS-SIG\0`; key derivation uses `NLS2-E2E-HS-SALT\0` and distinct labels prefixed with `NLS2 E2E`. Candidate message encodings, signature inputs, transcript hashing, and HKDF context encoding are specified in [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md). That separate draft remains an implementation blocker until byte-exact shared vectors and independent review pass. No destination-protection session may be claimed interoperable yet.
 
 ## 3. Destination envelope encoding
 
@@ -36,7 +36,7 @@ All integers are unsigned big-endian. No padding, extensions, or trailing bytes 
 | 36 | 32 | recipient_key_fingerprint | SHA-256 of recipient Ed25519 public key's canonical DER SubjectPublicKeyInfo |
 | 68 | 4 | ciphertext_length | Includes the 16-byte AES-256-GCM tag |
 
-The 72-byte header is AEAD associated data (AAD). The encrypted plaintext is exactly one complete inner IPv6 packet, including its IPv6 header and payload. `ciphertext_length` MUST equal plaintext length + 16 and the total envelope size MUST equal 72 + ciphertext_length. A receiver MUST reject lengths below 16, overflow, truncation, trailing bytes, unsupported version, nonzero flags, wrong recipient fingerprint, unknown session, wrong epoch, or a failed tag before exposing plaintext.
+The 72-byte header is AEAD associated data (AAD). The encrypted plaintext is exactly one complete inner IPv4 or IPv6 packet, including its IP header and payload. `ciphertext_length` MUST equal plaintext length + 16 and the total envelope size MUST equal 72 + ciphertext_length. A receiver MUST reject lengths below 16, overflow, truncation, trailing bytes, unsupported version, nonzero flags, wrong recipient fingerprint, unknown session, wrong epoch, or a failed tag before exposing plaintext.
 
 ### 3.2 Nonce and replay rules
 
@@ -60,4 +60,4 @@ Any malformed envelope, invalid tag, unknown session, replay, recipient mismatch
 
 Required tests: byte-exact header/envelope vectors; valid and tampered AEAD; wrong recipient/session/direction/epoch; duplicate and out-of-order packets; concurrent replay race; process restart and sequence uncertainty; session expiry; malformed lengths; maximum packet/PMTU behavior; no transit-relay access to destination keys; and multi-hop forwarding that preserves the inner envelope byte-for-byte.
 
-**Not yet specified:** end-to-end handshake message encoding and canonical transcript; exact status-generation freshness interaction; authenticated key update; crash-safe session lifecycle; and executable golden vectors. Those are blocking. This document defines a candidate envelope format, not a complete destination-protection protocol.
+**Remaining gates:** the separate endpoint-handshake draft must be vector-tested with this envelope; status-generation freshness and revocation interactions need integration tests; authenticated key update and crash-safe session lifecycle remain unspecified; endpoint-handshake golden vectors are not yet committed. This document defines a candidate envelope format, not a complete or interoperable destination-protection protocol.
