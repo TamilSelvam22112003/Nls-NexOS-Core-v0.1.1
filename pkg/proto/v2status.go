@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"net/netip"
 	"sort"
@@ -112,6 +111,11 @@ func ParseStatusObjectV2(raw []byte, statusSigningKey ed25519.PublicKey, now tim
 		binary.BigEndian.Uint32(raw[8:12]) != StatusObjectV2Size {
 		return result, ErrStatusEncoding
 	}
+	issuedRaw := binary.BigEndian.Uint64(raw[92:100])
+	expiresRaw := binary.BigEndian.Uint64(raw[100:108])
+	if issuedRaw > uint64(1<<63-1) || expiresRaw > uint64(1<<63-1) {
+		return result, fmt.Errorf("%w: timestamp exceeds supported range", ErrStatusFreshness)
+	}
 	if allZero(raw[12:44]) || allZero(raw[44:76]) ||
 		binary.BigEndian.Uint64(raw[76:84]) == 0 ||
 		binary.BigEndian.Uint64(raw[84:92]) == 0 {
@@ -134,8 +138,8 @@ func ParseStatusObjectV2(raw []byte, statusSigningKey ed25519.PublicKey, now tim
 		State: StatusState(raw[5]),
 		CertificateSerial: binary.BigEndian.Uint64(raw[76:84]),
 		Generation: binary.BigEndian.Uint64(raw[84:92]),
-		IssuedAt: time.Unix(int64(binary.BigEndian.Uint64(raw[92:100])), 0).UTC(),
-		ExpiresAt: time.Unix(int64(binary.BigEndian.Uint64(raw[100:108])), 0).UTC(),
+		IssuedAt: time.Unix(int64(issuedRaw), 0).UTC(),
+		ExpiresAt: time.Unix(int64(expiresRaw), 0).UTC(),
 		Endpoints: make([]StatusEndpoint, 0, endpointCount),
 	}
 	copy(evidence.IdentityFingerprint[:], raw[12:44])
@@ -143,7 +147,7 @@ func ParseStatusObjectV2(raw []byte, statusSigningKey ed25519.PublicKey, now tim
 	if evidence.IssuedAt.Unix() > now.Add(clockSkew).Unix() ||
 		evidence.ExpiresAt.Unix() <= now.Add(-clockSkew).Unix() ||
 		!evidence.ExpiresAt.After(evidence.IssuedAt) ||
-		evidence.ExpiresAt.Sub(evidence.IssuedAt) > maxLifetime {
+		expiresRaw <= issuedRaw || expiresRaw-issuedRaw > uint64(maxLifetime/time.Second) {
 		return result, ErrStatusFreshness
 	}
 	for i := 0; i < endpointCount; i++ {
@@ -306,9 +310,7 @@ func MarshalStatusObjectV2(evidence StatusEvidence, signingKey ed25519.PrivateKe
 		allZero(evidence.IdentityFingerprint[:]) || allZero(evidence.CertificateFingerprint[:]) {
 		return nil, ErrStatusEncoding
 	}
-	if evidence.IssuedAt.Unix() < 0 || evidence.ExpiresAt.Unix() < 0 ||
-		uint64(evidence.IssuedAt.Unix()) > math.MaxUint64 ||
-		uint64(evidence.ExpiresAt.Unix()) > math.MaxUint64 {
+	if evidence.IssuedAt.Unix() < 0 || evidence.ExpiresAt.Unix() < 0 || {
 		return nil, ErrStatusEncoding
 	}
 	endpoints := append([]StatusEndpoint(nil), evidence.Endpoints...)
