@@ -1,0 +1,63 @@
+{
+  "vector_id": "adjacent-hop-cookie-001",
+  "warning": "SYNTHETIC TEST MATERIAL ONLY; deterministic cookie secret and ephemeral private key are not production secrets.",
+  "fixed_validation_time_unix_seconds": 1793099101,
+  "outer_tuple": {
+    "source_ipv6": "2001:db8::1",
+    "destination_ipv6": "2001:db8::2",
+    "source_udp_port": 40000,
+    "destination_udp_port": 4242
+  },
+  "test_only_inputs": {
+    "cookie_secret_hex": "6666666666666666666666666666666666666666666666666666666666666666",
+    "handshake_id_hex": "0102030405060708090a0b0c0d0e0f10",
+    "nonce_i_hex": "7777777777777777777777777777777777777777777777777777777777777777",
+    "ephemeral_x25519_private_hex": "4444444444444444444444444444444444444444444444444444444444444444",
+    "ephemeral_x25519_public_hex": "ff2ee45601ec1b67310c7790404585ae697331eee1c1f8cf2419731c1fff3e6b",
+    "time_bucket": 59769970
+  },
+  "expected": {
+    "mac_input_hex": "4e4c53322d434f4f4b49450020010db800000000000000000000000120010db80000000000000000000000029c4010920102030405060708090a0b0c0d0e0f107777777777777777777777777777777777777777777777777777777777777777ff2ee45601ec1b67310c7790404585ae697331eee1c1f8cf2419731c1fff3e6b0000000003900472",
+    "mac_hex": "1171234834e03d2c17add22b42e4bb22fbb48fc3c947d7eb330d98bab5dac0be",
+    "cookie_hex": "00000000039004721171234834e03d2c17add22b42e4bb22fbb48fc3c947d7eb330d98bab5dac0be",
+    "cookie_length_bytes": 40
+  },
+  "negative_cases": [
+    {
+      "mutation": "change source IPv6",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change destination IPv6",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change source UDP port",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change destination UDP port",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change handshake_id",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change nonce_i",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change ephemeral public key",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change time bucket",
+      "expected": "reject_cookie"
+    },
+    {
+      "mutation": "change cookie secret",
+      "expected": "reject_cookie"
+    }
+  ]
+}

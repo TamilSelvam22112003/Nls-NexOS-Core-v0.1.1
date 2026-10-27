@@ -1,0 +1,147 @@
+package v2_vectors
+
+import (
+	"bytes"
+	"crypto/ecdh"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"net"
+	"os"
+	"testing"
+)
+
+type adjacentCookieVector struct {
+	Outer struct {
+		SourceIPv6      string `json:"source_ipv6"`
+		DestinationIPv6 string `json:"destination_ipv6"`
+		SourcePort      uint16 `json:"source_udp_port"`
+		DestinationPort uint16 `json:"destination_udp_port"`
+	} `json:"outer_tuple"`
+	Inputs struct {
+		Secret            string `json:"cookie_secret_hex"`
+		HandshakeID       string `json:"handshake_id_hex"`
+		NonceI             string `json:"nonce_i_hex"`
+		EphemeralPrivate   string `json:"ephemeral_x25519_private_hex"`
+		EphemeralPublic    string `json:"ephemeral_x25519_public_hex"`
+		TimeBucket         uint64 `json:"time_bucket"`
+	} `json:"test_only_inputs"`
+	Expected struct {
+		MACInput string `json:"mac_input_hex"`
+		MAC      string `json:"mac_hex"`
+		Cookie   string `json:"cookie_hex"`
+		Length   int    `json:"cookie_length_bytes"`
+	} `json:"expected"`
+}
+
+func loadAdjacentCookieVector(t *testing.T) adjacentCookieVector {
+	t.Helper()
+	raw, err := os.ReadFile("adjacent_cookie_001.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v adjacentCookieVector
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func hexBytes(t *testing.T, value string) []byte {
+	t.Helper()
+	got, err := hex.DecodeString(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func cookieInput(source, destination []byte, sourcePort, destinationPort uint16, handshakeID, nonceI, ephemeralPublic []byte, bucket uint64) []byte {
+	out := append([]byte("NLS2-COOKIE\x00"), source...)
+	out = append(out, destination...)
+	var port [2]byte
+	binary.BigEndian.PutUint16(port[:], sourcePort)
+	out = append(out, port[:]...)
+	binary.BigEndian.PutUint16(port[:], destinationPort)
+	out = append(out, port[:]...)
+	out = append(out, handshakeID...)
+	out = append(out, nonceI...)
+	out = append(out, ephemeralPublic...)
+	var timeBytes [8]byte
+	binary.BigEndian.PutUint64(timeBytes[:], bucket)
+	return append(out, timeBytes[:]...)
+}
+
+func cookieMAC(secret, input []byte) []byte {
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write(input)
+	return mac.Sum(nil)
+}
+
+func TestAdjacentHopCookie001(t *testing.T) {
+	v := loadAdjacentCookieVector(t)
+	source := net.ParseIP(v.Outer.SourceIPv6).To16()
+	destination := net.ParseIP(v.Outer.DestinationIPv6).To16()
+	if source == nil || destination == nil {
+		t.Fatal("cookie vector endpoints must be IPv6 addresses")
+	}
+	secret := hexBytes(t, v.Inputs.Secret)
+	handshakeID := hexBytes(t, v.Inputs.HandshakeID)
+	nonceI := hexBytes(t, v.Inputs.NonceI)
+	privateKey, err := ecdh.X25519().NewPrivateKey(hexBytes(t, v.Inputs.EphemeralPrivate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ephemeralPublic := privateKey.PublicKey().Bytes()
+	if !bytes.Equal(ephemeralPublic, hexBytes(t, v.Inputs.EphemeralPublic)) {
+		t.Fatal("X25519 public key mismatch")
+	}
+
+	input := cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket)
+	if !bytes.Equal(input, hexBytes(t, v.Expected.MACInput)) {
+		t.Fatalf("cookie MAC input mismatch\ngot:  %x\nwant: %s", input, v.Expected.MACInput)
+	}
+	mac := cookieMAC(secret, input)
+	if !bytes.Equal(mac, hexBytes(t, v.Expected.MAC)) {
+		t.Fatal("HMAC-SHA-256 cookie MAC mismatch")
+	}
+	cookie := make([]byte, 8, 8+len(mac))
+	binary.BigEndian.PutUint64(cookie, v.Inputs.TimeBucket)
+	cookie = append(cookie, mac...)
+	if len(cookie) != v.Expected.Length || !bytes.Equal(cookie, hexBytes(t, v.Expected.Cookie)) {
+		t.Fatal("40-byte cookie mismatch")
+	}
+
+	changedSource := append([]byte(nil), source...)
+	changedSource[15] ^= 1
+	changedDestination := append([]byte(nil), destination...)
+	changedDestination[15] ^= 1
+	changedID := append([]byte(nil), handshakeID...)
+	changedID[0] ^= 1
+	changedNonce := append([]byte(nil), nonceI...)
+	changedNonce[0] ^= 1
+	changedPublic := append([]byte(nil), ephemeralPublic...)
+	changedPublic[0] ^= 1
+	changedSecret := append([]byte(nil), secret...)
+	changedSecret[0] ^= 1
+	cases := [][]byte{
+		cookieInput(changedSource, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, changedDestination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort+1, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort+1, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, changedID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, changedNonce, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, changedPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket+1),
+	}
+	for i, changedInput := range cases {
+		if hmac.Equal(cookieMAC(secret, changedInput), mac) {
+			t.Fatalf("mutation %d did not invalidate cookie", i)
+		}
+	}
+	if hmac.Equal(cookieMAC(changedSecret, input), mac) {
+		t.Fatal("rotated cookie secret did not invalidate cookie")
+	}
+}
