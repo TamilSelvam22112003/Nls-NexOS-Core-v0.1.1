@@ -3,7 +3,7 @@
 **Status:** Proposed; not frozen; not an implementation contract yet  
 **Protocol version:** 2  
 **Scope:** Router-to-router NLS data-plane envelope and shared framing header  
-**Related:** [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md)  
+**Related:** [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md), [destination endpoint handshake](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md), [Router-CA status profile](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md), [destination-protection profile](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)  
 **Compatibility:** NLS v1 remains unchanged. A v1 peer MUST NOT interpret v2 packets as v1.  
 **Decision defaults used for this draft:** A1 — TUN/socket shim first; B1 — random short-lived opaque first-contact token; outer IPv6 addresses remain routable.
 
@@ -84,7 +84,7 @@ After AEAD decryption, DATA plaintext contains the following canonical structure
 | 6 | inner_envelope_length | uint32; exact byte length of the following inner envelope |
 | 7 | inner_envelope | Destination-protected inner packet/envelope; opaque to transit relays |
 
-The inner envelope MUST protect the original client/source address, destination/server address, transport metadata that is not required by the transit path, and application payload according to the separately specified destination-protection profile. Transit relays MUST NOT receive a destination private key merely to forward packets. The destination-protection profile and its key-establishment mechanism are not defined by this document and must be specified before implementation.
+The inner envelope MUST protect the original client/source address, destination/server address, transport metadata that is not required by the transit path, and application payload according to [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md). The endpoint key-establishment flow is proposed in [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md). Transit relays MUST NOT receive destination private keys. Both documents remain proposals and must be reviewed and backed by shared byte-exact vectors before implementation.
 
 The receiver MUST check every length with overflow-safe arithmetic, reject truncated or trailing bytes, validate that the previous-hop identity/locator match the authenticated adjacent session, and drop failures without forwarding.
 
@@ -144,9 +144,9 @@ The 44-byte NLS header, UDP header, outer IPv6 header, AEAD tag, hop plaintext f
 ## 12. Explicit unresolved blockers
 
 - Exact handshake/control packet formats and state machine.
-- Certificate profile, endpoint binding, revocation freshness, and Router-CA transport.
+- Router-CA status evidence and endpoint authorization are specified as a fixed 304-byte candidate in `ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md`; certificate profile and implementation mapping still require review.
 - Stateless cookie construction and anti-amplification limits.
-- Inner destination-protection wire format and key management.
+- Destination-protection envelope and endpoint handshake are drafted separately; their interoperability vectors, key lifecycle and review remain release gates.
 - Authenticated key update and restart-safe nonce/sequence persistence strategy.
 - Canonical identity encoding, field encoding rules, error codes, and maximum sizes.
 - TUN addressing/routing policy, loop prevention, return routing, ICMPv6/PMTU, and interaction with firewall/uRPF/NAT.
