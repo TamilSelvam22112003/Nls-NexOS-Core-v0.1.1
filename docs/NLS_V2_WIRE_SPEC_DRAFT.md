@@ -3,7 +3,7 @@
 **Status:** Proposed; not frozen. Standalone Go v2 status/framing/AEAD/hop-codec primitives and tests exist in `pkg/proto`; running services and packet I/O are not yet integrated  
 **Protocol version:** 2  
 **Scope:** Router-to-router NLS data-plane envelope and shared framing header  
-**Related:** [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md), [destination endpoint handshake](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md), [Router-CA status profile](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md), [destination-protection profile](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)  
+**Related:** [End-to-end workflow](NLS_V2_END_TO_END_WORKFLOW.md), [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md), [destination endpoint handshake](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md), [Router-CA status profile](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md), [destination-protection profile](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)  
 **Compatibility:** NLS v1 remains unchanged. A v1 peer MUST NOT interpret v2 packets as v1.  
 **Decision defaults used for this draft:** A1 — TUN/socket shim first; B1 — random short-lived opaque first-contact token; outer IPv6 addresses remain routable.
 
