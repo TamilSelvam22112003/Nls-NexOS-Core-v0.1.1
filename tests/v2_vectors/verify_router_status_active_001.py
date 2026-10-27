@@ -15,7 +15,10 @@ def build():
     fixture = json.loads(Path(__file__).with_name("router_status_active_001.json").read_text(encoding="utf-8"))
     key = Ed25519PrivateKey.from_private_bytes(hx(fixture["issuer_private_seed_hex_test_only"]))
     public_der = key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
-    router_id = hx(fixture["router_identity_fingerprint_hex"])
+    identity_spki = hx(fixture["router_identity_spki_der_hex"])
+    router_id = hashlib.sha256(identity_spki).digest()
+    if router_id.hex() != fixture["router_identity_fingerprint_hex"]:
+        raise SystemExit("router identity fingerprint mismatch")
     cert_fp = hx(fixture["certificate_fingerprint_hex"])
     prefix = bytearray(b"N2ST")
     prefix += bytes([1, 1]) + b"\x00\x00" + struct.pack(">I", 304)
