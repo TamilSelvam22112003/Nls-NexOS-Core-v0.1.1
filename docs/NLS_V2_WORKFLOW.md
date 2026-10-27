@@ -10,6 +10,7 @@
 - Canonical Router-CA status profile: [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md)
 - Session key/restart lifecycle: [NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md](NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md)
 - Cross-language vector tests: `tests/v2_vectors/`
+- Adjacent-hop cookie vector: [adjacent_cookie_001.json](../tests/v2_vectors/adjacent_cookie_001.json), [Go verifier](../tests/v2_vectors/adjacent_cookie_001_test.go), [Python verifier](../tests/v2_vectors/verify_adjacent_cookie_001.py)
 
 - Status: **Design proposal only; not a frozen wire contract**
 - Target: a separately versioned NLS v2 / future release after protocol review
