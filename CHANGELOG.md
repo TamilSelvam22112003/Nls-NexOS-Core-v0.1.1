@@ -8,6 +8,7 @@
 - Added docs/NLS_V2_CROSS_DOCUMENT_REVIEW.md: recorded payload-length ambiguity and endpoint-binding clarification, plus remaining destination-protection, Router-CA status, and key-lifecycle blockers.
 - Added docs/NLS_V2_CRYPTO_VECTORS_PLAN.md: byte-exact shared vector plan for codecs, cookies, signatures, transcript/KDF, AEAD, replay and adversarial cases; one fixed-width Router-CA status vector is committed; its signature was independently verified with OpenSSL; parser/policy and destination-handshake vectors remain open.
 - Added tests/v2_vectors/router_status_active_001.json and verify_router_status_active_001.py for the fixed-width status object; this does not test X.509 validation or handshake/data-plane behavior.
+- Added tests/v2_vectors/router_status_active_001_test.go so Go CI checks the identity fingerprint, exact 304-byte status object, Ed25519 signature, and signature-tamper rejection; X.509 path and Router-CA runtime integration are not covered.
 - Added docs/NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md: proposed D_INIT/D_RESP/D_FINISH transcript, signature and key-derivation rules; still requires review and shared vectors.
 - Added docs/NLS_V2_DESTINATION_PROTECTION_PROFILE.md: candidate end-to-end envelope and replay/nonce rules; endpoint handshake and lifecycle remain blockers.
 - Added docs/ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md: fixed-width signed status evidence format, endpoint binding, freshness and generation rules; certificate/CA integration remains a review gate.
