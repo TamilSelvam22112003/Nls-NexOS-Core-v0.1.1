@@ -19,7 +19,7 @@ This document fills the handshake/control-plane gap in the data-plane draft. It 
 
 Handshake and control messages are UDP payloads beginning with the common 44-byte NLS2 header defined in `NLS_V2_WIRE_SPEC_DRAFT.md`. For control packets, the 16-byte header identifier is the random **handshake_id** until a session is established. Once established, it is the **session_token**. These identifiers occupy the same field but MUST NOT be reused across handshake transactions or active sessions.
 
-The header length is exactly 44. The control payload begins with a 4-byte control prefix:
+The header length is exactly 44. For INIT, RETRY, and RESP, flags MUST be zero, key_epoch MUST be zero, and sequence_number MUST be zero. For FINISH_I and FINISH_R, key_epoch and sequence_number MUST both be zero because each message uses a fresh directional handshake key and nonce zero; the header's exchange_id MUST equal the handshake_id. CLOSE uses the established session token and the established session's epoch/sequence/replay rules. The control payload begins with a 4-byte control prefix:
 
 | Size | Field | Rule |
 |---:|---|---|
@@ -113,7 +113,7 @@ Derive 32 bytes for each label. Handshake keys protect FINISH_I/FINISH_R; data k
 
 ### 3.5 FINISH_I (0x04)
 
-FINISH_I is AES-256-GCM protected under the initiator-to-responder handshake key, with nonce `uint32_be(0) || uint64_be(0)`. The session token in the common header is still the handshake_id for this message. AAD is the exact common header plus outer IPv6 addresses and UDP ports. The decrypted control payload MUST contain:
+FINISH_I is AES-256-GCM protected under the initiator-to-responder handshake key, with header key_epoch=0, sequence_number=0, and nonce `uint32_be(0) || uint64_be(0)`. The exchange_id in the common header is still the handshake_id for this message. AAD is the exact common header plus outer IPv6 addresses and UDP ports. The decrypted control payload MUST contain:
 
 - 0x8001 initiator_certificate_chain: DER chain, leaf first, total <= 16 KiB.
 - 0x8002 initiator_status_evidence: Router-CA-signed status object, total <= 4 KiB.
