@@ -122,6 +122,8 @@ FINISH_I is AES-256-GCM protected under the initiator-to-responder handshake key
 - 0x8003 transcript_hash: exactly 32 bytes, SHA-256 over INIT-with-cookie and RESP datagrams.
 - 0x8004 initiator_signature: exactly 64 bytes, Ed25519 signature over the Section 2.1 canonical signature input, using the exact decrypted control record with this signature TLV omitted.
 
+
+
 Structural validation is available in the shared Go primitive `ValidateV2ControlMessage`; it checks field sets and encoded lengths only. It does not establish certificate-chain validity, CA status signature validity, endpoint authorization, transcript correctness, or authenticated state transition. Those remain required checks in the handshake manager.
 
 The responder MUST validate the initiator's certificate, fingerprint, endpoint binding, status evidence freshness/signature, transcript hash, and signature. It MUST NOT mark the peer ACTIVE or install routes before every check succeeds. If the responder has no valid Router-CA status evidence, it MUST reject new sessions.
