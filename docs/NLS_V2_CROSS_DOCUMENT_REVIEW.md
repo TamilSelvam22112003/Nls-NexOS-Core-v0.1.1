@@ -42,7 +42,7 @@ The TUN/socket shim carries NLS data but does not automatically protect native O
 **Disposition:** preserve the existing wording: shim-first; no claim that routing daemons or application protocols are secured unless a tested integration actually carries/protects them.
 
 ### F-07 — Handshake transcript vectors remain incomplete (blocking)
-The status-object and destination data-envelope fixtures have cross-language checks. A deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier have now been added for the destination endpoint handshake, including signatures, transcript, X25519, HKDF, and finish AEAD. CI verification is pending. Adjacent-hop handshake/cookie vectors and broader parser/policy negatives are still absent.
+The status-object and destination data-envelope fixtures have cross-language checks. A deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier have been added for the destination endpoint handshake, including signatures, transcript, X25519, HKDF, and finish AEAD. A separate adjacent-hop cookie vector now has Go and Python verifiers for the HMAC input/MAC and binding-mutation negatives. CI verification of the newest fixture commits is pending. The full adjacent-hop INIT/RESP/FINISH transcript vector and broader parser/policy negatives remain absent.
 
 **Disposition:** use `NLS_V2_CRYPTO_VECTORS_PLAN.md` as the checklist. No interoperability claim until both repositories consume the same fixtures and the complete positive/negative handshake suite passes.
 
