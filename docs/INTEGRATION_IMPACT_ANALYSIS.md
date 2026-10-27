@@ -1,9 +1,9 @@
 # NLS Integration Impact Analysis and Open-Question Resolution
 
-- Status: design analysis only; no runtime implementation
+- Status: impact/design analysis; standalone v2 status, framing, AEAD and hop-codec primitives exist under `pkg/proto`; full live handshake, socket/TUN packet I/O and routing integration are not complete
 - Target: NLS v2 proposal in the `docs/nls-hop-envelope-v2-proposal` branch
 - Baseline: v0.1.1 frozen wire protocol remains unchanged
-- Related: `PROTOCOL.md`, `PROTOCOL_FREEZE.md`, `THREAT_MODEL.md`, `TEST_PLAN.md`, `SPEC_ERRATA.md`, `NLS_V2_WORKFLOW.md`, ADR-0016
+- Related: `PROTOCOL.md`, `PROTOCOL_FREEZE.md`, `THREAT_MODEL.md`, `TEST_PLAN.md`, `SPEC_ERRATA.md`, `NLS_V2_WORKFLOW.md`, `NLS_V2_END_TO_END_WORKFLOW.md`, ADR-0016
 - Decision requested: review this analysis before any code or frozen wire-contract changes.
 
 ## 1. Design intent and necessary correction
