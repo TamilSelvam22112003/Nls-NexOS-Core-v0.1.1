@@ -23,7 +23,7 @@ NLS v2 is intended to carry client traffic through authenticated NLS relays whil
 | Shared protocol definitions | Define versioned v2 framing, canonical field encoding, size limits, error codes, and test vectors | v1 bytes remain unchanged |
 | Router-CA / enrollment | Bind router identity, certificate, advertised WAN endpoints, key roles, status, and revocation generation | No private key material in registry responses |
 | Peer directory / lookup | Authenticated, signed lookup of peer identity and authorized endpoint data | Caller ACTIVE; freshness and revocation checked |
-| Handshake/session manager | Establish distinct directional adjacent-hop keys and destination-protection keys; transcript binding, expiry, replay prevention, rekey | No static public-key encryption per packet; no key reuse across roles |
+| Handshake/session manager | Establish distinct directional adjacent-hop keys; destination-protection keys require a separate specified profile; transcript binding, expiry, replay prevention, rekey | No static public-key encryption per packet; no key reuse across roles |
 | VIP Table | Temporary first-contact state only: token/vIP, nonce, expiry, peer reference, handshake state | Bounded size, one-time use, collision/replay checks, atomic cleanup |
 | Trust Table | Verified peer identity, certificate fingerprint, authorized endpoint(s), status/generation, session references | Populate only after mutual validation; revoke invalidates sessions |
 | Packet encoder/decoder | Outer IPv6/UDP + minimal NLS framing + AEAD-protected hop envelope + destination-protected inner packet | Exact lengths, authenticated associated data, strict parser |
