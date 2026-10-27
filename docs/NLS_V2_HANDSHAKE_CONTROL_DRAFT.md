@@ -2,7 +2,7 @@
 
 **Status:** Proposed, review-required, not frozen.  
 **Compatibility:** This is a separately versioned v2 proposal. It does not change the v1 wire contract.  
-**Related:** [NLS v2 wire specification draft](NLS_V2_WIRE_SPEC_DRAFT.md), [integration impact analysis](INTEGRATION_IMPACT_ANALYSIS.md).
+**Related:** [NLS v2 wire specification draft](NLS_V2_WIRE_SPEC_DRAFT.md), [Router-CA v2 status profile](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md), [integration impact analysis](INTEGRATION_IMPACT_ANALYSIS.md).
 
 This document fills the handshake/control-plane gap in the data-plane draft. It is deliberately documentation-only. Implementations MUST NOT be described as interoperable until both documents are reconciled, reviewed, and backed by shared golden vectors.
 
@@ -98,7 +98,7 @@ Required TLVs:
 | 0x8006 | endpoint_binding | canonical endpoint tuple: address family (1 byte, value 6), IPv6 address (16 bytes), UDP port (2 bytes), router identity fingerprint (32 bytes) |
 | 0x8007 | signature | exactly 64-byte Ed25519 signature over the canonical signature input |
 
-The endpoint_binding identifies the responder's advertised receiving WAN endpoint: IPv6 address, NLS UDP port, and responder identity fingerprint. It MUST match the endpoint authorized by the responder certificate/status evidence and the responder destination endpoint selected by the initiator. The signed outer tuple separately binds the observed packet direction. The initiator's own authorized endpoint is checked against its certificate/status evidence and the outer source tuple in FINISH_I. The responder MUST validate the cookie before sending RESP. The initiator MUST validate the certificate chain to a pinned Router-CA trust anchor, identity fingerprint, endpoint binding, certificate validity, status signature and freshness, and RESP signature before accepting the responder. If no endpoint-authorization profile is provisioned, handshake establishment MUST fail.
+The endpoint_binding identifies the responder's advertised receiving WAN endpoint: IPv6 address, NLS UDP port, and responder identity fingerprint. The canonical signed status object in [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md) is the authoritative authorization for the UDP endpoint; the validated leaf certificate binds the Ed25519 identity, serial, and certificate fingerprint. The status object's certificate fingerprint/serial MUST match that leaf certificate, and the selected endpoint MUST appear in the ACTIVE status object's authorized endpoint slots. The signed outer tuple separately binds the observed packet direction. The initiator's own authorized endpoint is checked against its ACTIVE status object and the outer source tuple in FINISH_I. The responder MUST validate the cookie before sending RESP. The initiator MUST validate the certificate chain to a pinned Router-CA trust anchor, identity fingerprint, endpoint binding, certificate validity, status signature and freshness, and RESP signature before accepting the responder. If no endpoint-authorization profile is provisioned, handshake establishment MUST fail.
 
 ### 3.4 Key derivation after RESP
 
@@ -143,7 +143,7 @@ Close packets are authenticated, replay-checked, and idempotent. Unknown close r
 
 ## 4. Router-CA status evidence and endpoint binding
 
-Status evidence MUST be signed by the pinned Router-CA and bind at least: router identity fingerprint, certificate serial/fingerprint, status (ACTIVE, REVOKED, SUSPENDED), monotonically increasing status generation, issued-at time, expiry time, and authorized endpoint binding(s). The canonical encoding, CA signature envelope, and certificate profile must be specified by the Core repository before implementation. Evidence must be fresh under a configured maximum age. REVOKED/SUSPENDED or stale/invalid evidence prevents new session establishment.
+Status evidence MUST follow the fixed 304-byte N2ST object in [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md). It binds router identity fingerprint, certificate serial/fingerprint, status (ACTIVE, SUSPENDED, REVOKED), status generation, issued-at/expiry times, and up to four authorized IPv6/UDP endpoints. The object is signed by the pinned Router-CA status-signing key. The certificate profile binds the Ed25519 identity and serial; the signed status object is authoritative for NLS UDP endpoints. Evidence must be fresh under the configured maximum age. REVOKED/SUSPENDED or stale/invalid evidence prevents new session establishment.
 
 If the Router-CA is unreachable, a router fails closed for new protected sessions. Established sessions may continue only for a bounded, explicitly configured stale-status interval; revocation push or a fresh status result terminates affected sessions. CA compromise requires trust-anchor rotation and re-enrollment; pinning alone does not protect against compromise of the pinned CA.
 
@@ -192,8 +192,8 @@ This handshake authenticates NLS router-to-router sessions. It does not itself m
 1. **Common header length field:** the wire draft currently names field 40–43 `ciphertext_length` and says it includes a tag. This handshake draft requires `payload_length` because INIT/RETRY/RESP are not AEAD ciphertext. Rename it to `payload_length`; for DATA and encrypted controls, the value includes the AEAD tag; for plaintext signed/stateless handshake controls, it is the exact control payload size.
 2. **Control header identifier:** call it `exchange_id` at handshake time and `session_token` after establishment; same 16-byte slot, different lifecycle. Do not treat either as a routable IP or identity.
 3. **Nonce and transcript definition:** exact datagram transcript bytes, handshake AAD, and signature canonicalization need independent implementation vectors. In particular, signature verification must use the original sender/receiver endpoint tuple and must not be recomputed with a different direction's tuple.
-4. **Certificate profile:** the exact Router-CA certificate/status encoding and endpoint authorization profile remain Core-specific prerequisites.
-5. **Destination protection:** this handshake establishes adjacent-hop keys only. The destination-protection envelope and its key-management protocol remain separate and unspecified.
+4. **Certificate/status profile:** the canonical 304-byte status object and its signature input are defined in the Core-owned proposal. Certificate chain policy, local registry mapping, and out-of-band CA-key rollover still require implementation review and vectors.
+5. **Destination protection:** this adjacent-hop handshake does not establish destination-protection keys. The separate destination endpoint handshake is drafted in `NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md`; it remains a proposal until byte-exact vectors, lifecycle behavior, and independent review pass.
 6. **Key update:** reserved and unsupported; re-handshake before key/sequence exhaustion. Do not ship long-lived sessions without an explicit rotation/restart plan.
 7. **Transport details:** source/destination ports and outer address fields are authenticated as AAD for encrypted traffic; signed handshake messages bind their endpoint tuple through the signature input. NAT rebinding requires a separate authenticated migration procedure and is unsupported here.
 
@@ -213,4 +213,4 @@ A spoofing attacker can send INIT packets, but should not trigger per-peer state
 
 ## 13. Review status
 
-This is a concrete draft, not a frozen specification. It resolves the proposed message sequence and field inventory at the design level, but the exact Router-CA certificate/status encoding, destination-protection profile, key-update design, and shared cryptographic vectors remain blockers. Do not begin production implementation or claim interoperability until these are resolved and the user has reviewed the specification.
+This is a concrete draft, not a frozen specification. The fixed-width status object and destination endpoint handshake now have candidate documents and a status-object vector, but endpoint-handshake vectors, authenticated adjacent-hop key update/restart safety, and integration tests remain blockers. Do not claim interoperability or production readiness until these are resolved and reviewed.
