@@ -168,6 +168,7 @@ func TestHopPlaintextRoundTripAndStrictLengths(t *testing.T) {
 	input := HopPlaintext{
 		PreviousHopIdentity: identity,
 		PreviousHopLocator:  LogicalLocatorForIdentity(identity),
+		RouteToken:          [16]byte{9, 8, 7, 6, 5, 4, 3, 2, 1},
 		InnerEnvelope:       []byte{0x4e, 0x32, 0x44, 0x45, 1, 2, 3, 4},
 	}
 	encoded, err := MarshalHopPlaintext(input, 1024)
@@ -180,6 +181,7 @@ func TestHopPlaintextRoundTripAndStrictLengths(t *testing.T) {
 	}
 	if parsed.PreviousHopIdentity != identity ||
 		parsed.PreviousHopLocator != input.PreviousHopLocator ||
+		parsed.RouteToken != input.RouteToken ||
 		!bytes.Equal(parsed.InnerEnvelope, input.InnerEnvelope) {
 		t.Fatalf("hop plaintext roundtrip mismatch: %+v", parsed)
 	}
@@ -200,8 +202,19 @@ func TestHopPlaintextRoundTripAndStrictLengths(t *testing.T) {
 		t.Fatalf("noncanonical identity length must fail, got %v", err)
 	}
 	badInnerLength := append([]byte(nil), encoded...)
-	badInnerLength[53] = 0xff
+	badInnerLength[71] = 0xff
 	if _, err := ParseHopPlaintext(badInnerLength, 1024); err == nil {
 		t.Fatal("incorrect inner envelope length must fail")
+	}
+
+	zeroRouteToken := input
+	zeroRouteToken.RouteToken = [16]byte{}
+	if _, err := MarshalHopPlaintext(zeroRouteToken, 1024); !errors.Is(err, ErrV2HopPlaintext) {
+		t.Fatalf("zero route token must fail, got %v", err)
+	}
+	badRouteTokenLength := append([]byte(nil), encoded...)
+	badRouteTokenLength[54] = 15
+	if _, err := ParseHopPlaintext(badRouteTokenLength, 1024); !errors.Is(err, ErrV2HopPlaintext) {
+		t.Fatalf("noncanonical route token length must fail, got %v", err)
 	}
 }
