@@ -19,6 +19,7 @@
 - Added docs/ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md: fixed-width signed status evidence format, endpoint binding, freshness and generation rules; certificate/CA integration remains a review gate.
 - Added docs/NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md: candidate bounded-session profile covering no session resumption after restart, sequence/byte/lifetime caps, atomic sequence allocation, replay handling, and required tests. Runtime enforcement is not implemented.
 - Added `tests/v2_vectors/adjacent_cookie_001.json` with Go and Python verifiers for the exact address-bound HMAC cookie, X25519 ephemeral public key, 40-byte cookie, and binding-mutation negatives. This does not cover the full adjacent-hop handshake.
+- Corrected the cookie vector's expected MAC-input hex to include the ASCII `2` in the `NLS2-COOKIE\0` domain label. The first Go run caught this fixture typo before checking the MAC; the corrected vector is awaiting a fresh CI run.
 - Clarified adjacent-hop handshake signature canonicalization and certificate-chain count/length framing; golden vectors are still required.
 - Documentation and deterministic vector/test-only changes; NLS v1 wire contract, runtime protocol code, and configuration defaults remain unchanged. NLS v2 drafts are not frozen and still have unresolved interoperability, lifecycle, and lab gates.
 
