@@ -44,7 +44,7 @@ func loadAdjacentCookieVector(t *testing.T) adjacentCookieVector {
 	return v
 }
 
-func cookieInput(v adjacentCookieVector, source, destination []byte, sourcePort, destinationPort uint16, handshakeID, nonceI, ephemeralPublic []byte, bucket uint64) []byte {
+func cookieInput(source, destination []byte, sourcePort, destinationPort uint16, handshakeID, nonceI, ephemeralPublic []byte, bucket uint64) []byte {
 	out := append([]byte("NLS2-COOKIE\x00"), source...)
 	out = append(out, destination...)
 	var port [2]byte
@@ -75,7 +75,7 @@ func TestAdjacentHopCookie001(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	ephemeralPublic := privateKey.PublicKey().Bytes()
 	if !bytes.Equal(ephemeralPublic, decodeHex(t, v.Inputs.EphemeralPublic)) { t.Fatal("X25519 public key mismatch") }
-	input := cookieInput(v, source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket)
+	input := cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket)
 	if !bytes.Equal(input, decodeHex(t, v.Expected.MACInput)) { t.Fatal("cookie MAC input mismatch") }
 	mac := cookieMAC(secret, input)
 	if !bytes.Equal(mac, decodeHex(t, v.Expected.MAC)) { t.Fatal("HMAC-SHA-256 cookie MAC mismatch") }
@@ -90,11 +90,11 @@ func TestAdjacentHopCookie001(t *testing.T) {
 	changedPublic := append([]byte(nil), ephemeralPublic...); changedPublic[0] ^= 1
 	changedSecret := append([]byte(nil), secret...); changedSecret[0] ^= 1
 	cases := [][]byte{
-		cookieInput(v, changedSource, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
-		cookieInput(v, source, destination, v.Outer.SourcePort, v.Outer.DestinationPort+1, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
-		cookieInput(v, source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, changedID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
-		cookieInput(v, source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, changedNonce, ephemeralPublic, v.Inputs.TimeBucket),
-		cookieInput(v, source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, changedPublic, v.Inputs.TimeBucket),
+		cookieInput(changedSource, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort+1, handshakeID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, changedID, nonceI, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, changedNonce, ephemeralPublic, v.Inputs.TimeBucket),
+		cookieInput(source, destination, v.Outer.SourcePort, v.Outer.DestinationPort, handshakeID, nonceI, changedPublic, v.Inputs.TimeBucket),
 	}
 	for i, changedInput := range cases {
 		if hmac.Equal(cookieMAC(secret, changedInput), mac) { t.Fatalf("mutation %d did not invalidate cookie", i) }
