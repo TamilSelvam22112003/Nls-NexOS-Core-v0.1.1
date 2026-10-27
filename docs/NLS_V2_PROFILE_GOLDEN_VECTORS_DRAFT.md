@@ -1,6 +1,6 @@
 # NLS v2 Profile Golden Vectors (Draft)
 
-**Status:** Python and Go checks validate the status prefix/signature, but an initial full-object test exposed twelve extra zero bytes; the fixture is corrected to exactly 304 bytes and a fresh CI result is pending. The destination-envelope vector is checked by Go standard-library AES-GCM against Python cryptography output. One deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier are committed; CI verification is pending. Broader adjacent-hop, parser/policy, and adversarial suites remain open; these are draft vectors, not a frozen protocol contract.
+**Status:** Python and Go checks validate the status prefix/signature, but an initial full-object test exposed twelve extra zero bytes; the fixture is corrected to exactly 304 bytes, and the decimal serial input now matches the encoded uint64; a fresh CI result is pending. The destination-envelope vector is checked by Go standard-library AES-GCM against Python cryptography output. One deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier are committed; CI verification is pending. Broader adjacent-hop, parser/policy, and adversarial suites remain open; these are draft vectors, not a frozen protocol contract.
 **WARNING:** All keys, identities, and certificate bytes below are synthetic TEST-ONLY values. Never use them in production.
 **Generator:** Python `cryptography 46.0.4`; vector revision `nls-v2-profiles-proposal-2026-10-27`.
 
