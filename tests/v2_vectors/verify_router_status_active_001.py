@@ -7,6 +7,7 @@ import struct
 from pathlib import Path
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.exceptions import InvalidSignature
 
 def hx(value):
     return bytes.fromhex(value)
@@ -47,7 +48,23 @@ def build():
         if fixture[name] != value:
             raise SystemExit(f"mismatch: {name}")
     key.public_key().verify(signature, signed)
-    print("PASS router_status_active_001: 240-byte prefix and Ed25519 signature match fixture")
+    altered = bytearray(signed)
+    altered[-1] ^= 1
+    try:
+        key.public_key().verify(signature, bytes(altered))
+    except InvalidSignature:
+        pass
+    else:
+        raise SystemExit("altered signed bytes were accepted")
+    bad_sig = bytearray(signature)
+    bad_sig[0] ^= 1
+    try:
+        key.public_key().verify(bytes(bad_sig), signed)
+    except InvalidSignature:
+        pass
+    else:
+        raise SystemExit("altered signature was accepted")
+    print("PASS router_status_active_001: positive vector and two negative signature checks")
     print("WARNING: synthetic test-only signing material; X.509 validation is not tested")
 
 if __name__ == "__main__":
