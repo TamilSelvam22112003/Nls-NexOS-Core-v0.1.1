@@ -150,4 +150,4 @@ A compromised relay can observe its adjacent-hop identities, outer network metad
 ## 10. Change log
 
 - Added the v2 end-to-end workflow, component-impact matrix, table responsibilities, open-question disposition, assumptions and acceptance gates.
-- Documentation only; no wire bytes, runtime code, configuration defaults, or tests changed.
+- Documentation and deterministic vector/test-only changes; no runtime protocol code or configuration defaults changed, and the NLS v1 wire contract remains unchanged.
