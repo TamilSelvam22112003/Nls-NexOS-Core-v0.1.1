@@ -4,7 +4,6 @@
   "profile": "NLS2-ROUTER-STATUS fixed 304-byte profile",
   "issuer_private_seed_hex_test_only": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   "issuer_public_spki_der_hex": "302a300506032b657003210003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
-  "router_identity_private_seed_hex_test_only": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
   "router_identity_spki_der_hex": "302a300506032b657003210029acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
   "router_identity_fingerprint_hex": "824c89aa8efb95ef93629b4519599129cace4adac9a6180daba31ceed41ecee6",
   "certificate_fingerprint_hex": "b76e84e8173e5b45474227f3cf83ae7a848c38f4aee6e3101eb1a258f6de4c41",
