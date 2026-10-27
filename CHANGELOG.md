@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased — NLS v2 proposal
+- Added docs/INTEGRATION_IMPACT_ANALYSIS.md: component-impact matrix, routing-integration decision, open-question dispositions, state machines and pre-implementation acceptance gates.
 - Added docs/NLS_V2_WORKFLOW.md: workflow, component impact, table responsibilities, open-question disposition, and acceptance/test gates.
 - Documentation only; v1 wire contract and runtime code unchanged.
 
