@@ -31,10 +31,10 @@ The earlier wording appended message_type 0x11 separately even though the canoni
 
 **Resolution:** D_INIT signs exactly `ASCII("NLS2-E2E-HS-SIG") || 0x00 || canonical_D_INIT_without_signature_TLV`; the 4-byte canonical control prefix includes message_type once. D_RESP signs the length-prefixed exact D_INIT record followed by the length-prefixed canonical D_RESP record without its signature TLV. The deterministic destination-handshake fixture pins both rules; CI verification is pending.
 
-### F-05 — Key-update/restart lifecycle is incomplete (blocking for long-lived sessions)
-KEY_UPDATE is reserved. Re-establishment is required before sequence exhaustion or any restart that could repeat a nonce, but no persistent sequence/key-state algorithm or operational restart invariant is specified.
+### F-05 — Key-update/restart lifecycle is specified at design level (implementation gate remains)
+KEY_UPDATE remains reserved and unsupported. The new `NLS_V2_SESSION_KEY_LIFECYCLE_PROFILE.md` prohibits session resumption across process restarts, requires a fresh full handshake after restart, and defines proposed session lifetime, byte/packet caps, atomic sequence allocation, retransmission, replay-window, session replacement, and secret-redaction invariants.
 
-**Disposition:** keep key update unsupported; enforce a bounded session lifetime and fail closed on uncertain nonce state. Do not describe long-lived production sessions as ready until authenticated rekey, crash/restart behavior, key erasure, and race handling are specified and tested.
+**Disposition:** the restart policy is now explicit in the candidate design. Runtime enforcement, sequence/replay concurrency tests, crash/restart tests, and review of the proposed caps remain open. Do not claim runtime safety or production readiness until those tests pass.
 
 ### F-06 — Routing protocol protection scope must remain explicit (high)
 The TUN/socket shim carries NLS data but does not automatically protect native OSPF, OSPFv3, BGP, RIP/RIPng, IPsec, or TLS packets. Native routing integration needs separate adjacency, multicast, TTL/hop-limit, MTU, route authorization, and failure/convergence designs.
@@ -51,11 +51,17 @@ The first Go CI run rejected the status fixture because `status_object_304_hex` 
 
 **Resolution:** the fixture now sets `status_object_304_hex = status_prefix_240_hex || signature_hex`, and the resulting object is exactly 304 bytes. This was a test-fixture defect, not a runtime-code change. The corrected fixture still needs a fresh completed CI run in both repositories.
 
+
+### F-10 — Adjacent-hop signature and certificate-chain encoding needed exact canonical rules (high; clarified, vectors still required)
+The handshake draft's signature formula redundantly named control_type outside a canonical control record that already contains the control prefix, and the certificate-chain TLV did not fully specify the count/length framing.
+
+**Resolution:** the signature input now binds the version and handshake_id once, followed by the canonical control record with the signature TLV omitted and the ordered outer IPv6/UDP tuple. The certificate-chain value is uint32_be(count) followed by repeated uint32_be(cert_length) || DER_certificate entries, leaf first. Byte-exact adjacent-hop handshake/cookie vectors must still verify these rules independently.
+
 ## Release gates
 
 1. Review and freeze the candidate destination envelope, destination endpoint handshake, and Router-CA status profiles; preserve v1 unchanged.
 2. Generate shared byte-exact adjacent-hop and destination-handshake vectors, including cookies, signatures, transcript, HKDF, finish AEAD, and negative cases.
-3. Complete authenticated key-update/restart/nonce lifecycle decisions and independent protocol review.
+3. Review the candidate session lifecycle profile; implement and test its bounded-session, restart invalidation, atomic nonce/replay, and secret-redaction invariants. KEY_UPDATE remains unsupported.
 4. Implement shared codec/status-validation primitives in Core only after contract review.
 5. Implement NetOS session and packet handling against the same fixtures.
 6. Pass unit/property/fuzz tests, then the six-node functional lab and ten-router IPv6/FRR lab; keep performance gates separate.
