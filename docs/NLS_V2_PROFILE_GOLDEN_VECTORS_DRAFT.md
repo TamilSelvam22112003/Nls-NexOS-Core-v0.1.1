@@ -1,6 +1,6 @@
 # NLS v2 Profile Golden Vectors (Draft)
 
-**Status:** Deterministic candidate vectors generated and locally verified; not yet consumed by repository tests or independently verified by a second implementation.
+**Status:** The fixed-width status vector is verified by Go standard-library Ed25519 tests and a Python cryptography verifier. The destination-envelope vector is now consumed by Go standard-library AES-GCM tests in both repositories and matches the Python cryptography-generated ciphertext. Destination endpoint-handshake vectors and parser/policy adversarial suites remain open; these are draft vectors, not a frozen protocol contract.
 **WARNING:** All keys, identities, and certificate bytes below are synthetic TEST-ONLY values. Never use them in production.
 **Generator:** Python `cryptography 46.0.4`; vector revision `nls-v2-profiles-proposal-2026-10-27`.
 
@@ -43,4 +43,4 @@ Expected ciphertext plus 16-byte tag (56 bytes):
 Expected total envelope length: 128 bytes. Local decryption round-trip succeeded. Flipping the final tag bit was rejected. Additional required negatives: change recipient fingerprint without recomputing tag → reject authentication; append a byte → reject length; unknown session ID → reject session lookup.
 
 ## Conformance caveats
-These are two profile-level vectors, not complete NLS v2 interoperability vectors. The endpoint handshake encoding, its canonical transcript, authenticated key update, crash-safe nonce lifecycle, and full certificate validation remain unspecified. Repository CI has not yet consumed these vectors, and a second independent implementation/reviewer must verify them before they become release gates.
+These two vectors cover the fixed-width status-object encoding/signature and the 72-byte destination data-envelope AES-256-GCM framing. The destination envelope was generated with Python cryptography and is checked by Go's standard-library AES-GCM implementation. The status vector tests a synthetic certificate fingerprint, not X.509 path validation. The destination endpoint handshake still lacks byte-exact shared vectors; authenticated adjacent-hop key update, crash-safe nonce lifecycle, parser/policy fuzzing, and full Router-CA integration remain open. Passing these vector tests does not make NLS v2 interoperable or production-ready.
