@@ -1,6 +1,6 @@
 # NLS v2 Profile Golden Vectors (Draft)
 
-**Status:** The fixed-width status vector is verified by Go standard-library Ed25519 tests and a Python cryptography verifier. The destination-envelope vector is now consumed by Go standard-library AES-GCM tests in both repositories and matches the Python cryptography-generated ciphertext. Destination endpoint-handshake vectors and parser/policy adversarial suites remain open; these are draft vectors, not a frozen protocol contract.
+**Status:** The fixed-width status vector is verified by Go standard-library Ed25519 tests and a Python cryptography verifier. The destination-envelope vector is checked by Go standard-library AES-GCM tests against Python cryptography output. One deterministic D_INIT/D_RESP/D_FINISH fixture and Go verifier are now committed; CI verification is pending. Broader adjacent-hop, parser/policy, and adversarial suites remain open; these are draft vectors, not a frozen protocol contract.
 **WARNING:** All keys, identities, and certificate bytes below are synthetic TEST-ONLY values. Never use them in production.
 **Generator:** Python `cryptography 46.0.4`; vector revision `nls-v2-profiles-proposal-2026-10-27`.
 
