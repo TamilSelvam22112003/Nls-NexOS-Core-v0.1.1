@@ -155,7 +155,7 @@ No routing daemon should advertise an authenticated NLS adjacency until peer ide
 
 ## 9. Implementation status and required gates
 
-The repositories contain standalone Go v2 status/framing/AEAD/hop-codec primitives, a stateless cookie Issue/Verify primitive, and synthetic tests. These do not by themselves make a running router-to-router NLS system: packet I/O, authenticated adjacent handshake state, destination endpoint handshake/session wiring, trust/session table integration, Linux TUN setup, forwarding policy, and FRR/IPv6 lab validation remain separate milestones.
+The repositories contain standalone Go v2 status/framing/AEAD/hop-codec primitives, a stateless cookie Issue/Verify primitive, a canonical control/TLV codec, and synthetic tests. These do not by themselves make a running router-to-router NLS system: packet I/O, authenticated adjacent handshake state, destination endpoint handshake/session wiring, trust/session table integration, Linux TUN setup, forwarding policy, and FRR/IPv6 lab validation remain separate milestones.
 
 Before calling NLS v2 interoperable:
 
