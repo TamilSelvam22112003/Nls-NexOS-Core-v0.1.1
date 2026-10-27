@@ -43,18 +43,14 @@ The status-object and destination data-envelope fixtures now have cross-language
 
 ## Release gates
 
-1. Review/freeze the candidate destination envelope, destination handshake, and Router-CA status profiles; preserve v1 unchanged.
+1. Review and freeze the candidate destination envelope, destination endpoint handshake, and Router-CA status profiles; preserve v1 unchanged.
 2. Generate shared byte-exact adjacent-hop and destination-handshake vectors, including cookies, signatures, transcript, HKDF, finish AEAD, and negative cases.
-3. Complete key-update/restart/nonce lifecycle decisions and independent review.
+3. Complete authenticated key-update/restart/nonce lifecycle decisions and independent protocol review.
 4. Implement shared codec/status-validation primitives in Core only after contract review.
-4. Implement NetOS session and packet handling against the same vectors.
-5. Pass unit/property/fuzz tests, then the six-node functional lab and ten-router IPv6/FRR lab. Keep performance gates separate.
-6. Obtain independent cryptographic/protocol review before production claims.
+5. Implement NetOS session and packet handling against the same fixtures.
+6. Pass unit/property/fuzz tests, then the six-node functional lab and ten-router IPv6/FRR lab; keep performance gates separate.
+7. Obtain independent cryptographic/protocol review before production claims.
 
 ## Attacker-perspective conclusion
 
-The outer IPv6/UDP relay endpoints, lengths, timing, and traffic volumes remain observable. A compromised authorized relay can observe its own adjacent-hop metadata and can drop, delay, reorder, or selectively forward traffic. A compromised Router-CA can misissue identity/status evidence. These drafts do not yet prove destination confidentiality, replay safety across restart, or interoperability. The corrected length rule removes one concrete ambiguity; it does not close the remaining blockers.
-
-## Profile-draft follow-up (2026-10-27)
-
-The canonical candidate documents already in this branch are NLS_V2_DESTINATION_PROTECTION_PROFILE.md and ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md. The similarly named files with a _DRAFT suffix are marked superseded to avoid competing wire contracts. The fixed-width 304-byte Router-CA status profile remains a proposal and has not been proven compatible with the current implementation. Destination-handshake encoding, status/certificate linkage, key lifecycle and independent parser/policy and destination-handshake vector verification remain open; the status signature itself has been independently verified with OpenSSL. One synthetic positive status-object vector and a verifier are now committed; no runtime protocol code changed.
+The outer IPv6/UDP relay endpoints, lengths, timing, and traffic volumes remain observable. A compromised authorized relay can observe its own adjacent-hop metadata and can drop, delay, reorder, or selectively forward traffic. A compromised Router-CA can misissue identity/status evidence. The status and destination-envelope vectors verify limited byte-level behavior only; they do not prove destination confidentiality, replay safety across restart, or full interoperability. No runtime protocol code changed in this work.
