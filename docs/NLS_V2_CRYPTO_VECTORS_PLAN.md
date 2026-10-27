@@ -89,3 +89,8 @@ Cover:
 - Property-based and fuzz tests complement vectors; they do not replace them.
 - CI fails on fixture drift, missing vectors, or different serialization/output.
 - No claim of interoperability until all mandatory vectors pass in both repositories and a multi-router lab validates actual packet handling.
+
+
+## Current primitive coverage update
+
+`pkg/proto/v2cookie.go` provides stateless cookie Issue/Verify and `pkg/proto/v2cookie_test.go` checks the shared cookie fixture, claim binding, bucket expiry and secret rotation. `pkg/proto/v2control.go` provides bounded canonical control prefix/TLV encoding and parsing; `pkg/proto/v2control_test.go` checks strict ordering, duplicate/unknown fields, reserved bytes and length failures. These primitives do not implement the adjacent-handshake state machine or complete end-to-end session integration. Latest CI for the new additions is pending.
