@@ -296,9 +296,13 @@ func TestDestinationEndpointHandshake001(t *testing.T) {
 	}
 	var respSigInput bytes.Buffer
 	respSigInput.WriteString("NLS2-E2E-HS-SIG\x00")
-	_ = binary.Write(&respSigInput, binary.BigEndian, uint32(len(dInit)))
+	dInitLength := make([]byte, 4)
+	binary.BigEndian.PutUint32(dInitLength, uint32(len(dInit)))
+	respSigInput.Write(dInitLength)
 	respSigInput.Write(dInit)
-	_ = binary.Write(&respSigInput, binary.BigEndian, uint32(len(respUnsigned)))
+	respUnsignedLength := make([]byte, 4)
+	binary.BigEndian.PutUint32(respUnsignedLength, uint32(len(respUnsigned)))
+	respSigInput.Write(respUnsignedLength)
 	respSigInput.Write(respUnsigned)
 	if !ed25519.Verify(respPub, respSigInput.Bytes(), respSig) {
 		t.Fatal("D_RESP signature invalid")
