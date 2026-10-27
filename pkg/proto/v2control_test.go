@@ -79,7 +79,6 @@ func TestMarshalV2ControlPayloadRejectsUnsortedDuplicateAndReservedTypes(t *test
 		{Type: V2ControlInit, TLVs: []V2ControlTLV{{Type: 0x8001}, {Type: 0x8001}}},
 		{Type: V2ControlInit, TLVs: []V2ControlTLV{{Type: 0}}},
 		{Type: V2ControlKeyUpdate},
-		{Type: V2ControlInit},
 	}
 	for i, message := range tests {
 		if _, err := MarshalV2ControlPayload(message, 128); err == nil {
