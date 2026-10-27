@@ -8,7 +8,7 @@ This handshake establishes a source-to-destination NLS session whose keys are un
 
 All integers are unsigned big-endian. A plaintext control record begins with a 4-byte prefix: message_type (1 byte), flags (1 byte, zero), reserved (2 bytes, zero), followed by TLVs. Each TLV is type (uint16), length (uint32), value (exact bytes). TLVs must be strictly ascending by full type, unique, bounded, and without padding or trailing bytes. All listed TLVs are critical. Message type codes are 0x11 D_INIT, 0x12 D_RESP, 0x13 D_FINISH_I, and 0x14 D_FINISH_R.
 
-Suite 0x0001 uses Ed25519 identity signatures, ephemeral X25519, HKDF-SHA-256, and AES-256-GCM. Router identity is SHA-256 over DER SubjectPublicKeyInfo. Status evidence uses the fixed 304-byte candidate object in ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md. Both certificate and status must authorize the endpoint role and be valid/fresh before session activation.
+Suite 0x0001 uses Ed25519 identity signatures, ephemeral X25519, HKDF-SHA-256, and AES-256-GCM. Router identity is SHA-256 over DER SubjectPublicKeyInfo. Status evidence uses the fixed 304-byte candidate object in [ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md). The validated certificate binds the identity and serial; the ACTIVE, fresh status object authorizes endpoint tuples. Local policy must also permit the peer/flow before session activation.
 
 ## 2. D_INIT (0x11)
 
