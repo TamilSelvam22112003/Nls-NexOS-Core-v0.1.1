@@ -230,7 +230,23 @@ func VerifyStatusCertificateChain(leaf *x509.Certificate, roots, intermediates *
 	return nil
 }
 
-// StatusTracker applies verified status generations atomically per router identity.
+// ParseAndVerifyRouterStatusObjectV2 applies the full status trust gate in one call:
+ // canonical encoding, CA signature, freshness, certificate chain, and status/certificate binding.
+ func ParseAndVerifyRouterStatusObjectV2(raw []byte, statusSigningKey ed25519.PublicKey, leaf *x509.Certificate, roots, intermediates *x509.CertPool, now time.Time, maxLifetime, clockSkew time.Duration) (VerifiedStatus, error) {
+ 	verified, err := ParseStatusObjectV2(raw, statusSigningKey, now, maxLifetime, clockSkew)
+ 	if err != nil {
+ 		return VerifiedStatus{}, err
+ 	}
+ 	if err := VerifyStatusCertificateChain(leaf, roots, intermediates, now); err != nil {
+ 		return VerifiedStatus{}, err
+ 	}
+ 	if err := ValidateStatusCertificateBinding(verified, leaf, now); err != nil {
+ 		return VerifiedStatus{}, err
+ 	}
+ 	return verified, nil
+ }
+
+ // StatusTracker applies verified status generations atomically per router identity.
 type StatusTracker struct {
 	mu      sync.Mutex
 	entries map[[32]byte]VerifiedStatus
@@ -260,7 +276,7 @@ func (t *StatusTracker) Apply(status VerifiedStatus) error {
 			}
 			return ErrStatusEquivocation
 		}
-		if current.Evidence.State == StatusRevoked && status.Evidence.State == StatusActive {
+		if current.Evidence.State == StatusRevoked && status.Evidence.State != StatusRevoked {
 			return ErrStatusRevoked
 		}
 	}
