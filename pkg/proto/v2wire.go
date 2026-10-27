@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"crypto/sha256"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -288,12 +289,25 @@ func validateOuterTuple(outer OuterTuple) error {
 	return nil
 }
 
+// LogicalLocatorForIdentity derives a stable, private NLS overlay locator from a CA-authenticated router identity.
+// It is metadata carried only inside the encrypted hop envelope, never the routable outer IPv6 header.
+func LogicalLocatorForIdentity(identityFingerprint [32]byte) netip.Addr {
+	digestInput := make([]byte, 0, len("NLS2-ROUTER-LOCATOR\x00")+len(identityFingerprint))
+	digestInput = append(digestInput, []byte("NLS2-ROUTER-LOCATOR\x00")...)
+	digestInput = append(digestInput, identityFingerprint[:]...)
+	digest := sha256.Sum256(digestInput)
+	var raw [16]byte
+	raw[0] = 0xfd // RFC 4193 locally assigned ULA prefix
+	copy(raw[1:], digest[:15])
+	return netip.AddrFrom16(raw)
+}
+
 // MarshalHopPlaintext serializes the fixed v2 encrypted hop plaintext layout.
 func MarshalHopPlaintext(value HopPlaintext, maxInnerEnvelope uint32) ([]byte, error) {
 	if allZero(value.PreviousHopIdentity[:]) ||
 		!value.PreviousHopLocator.Is6() || value.PreviousHopLocator.Is4In6() ||
 		value.PreviousHopLocator.IsUnspecified() || value.PreviousHopLocator.IsMulticast() ||
-		value.PreviousHopLocator.IsLoopback() || len(value.InnerEnvelope) == 0 ||
+		value.PreviousHopLocator.IsLoopback() || value.PreviousHopLocator != LogicalLocatorForIdentity(value.PreviousHopIdentity) || len(value.InnerEnvelope) == 0 ||
 		uint64(len(value.InnerEnvelope)) > uint64(^uint32(0)) {
 		return nil, ErrV2HopPlaintext
 	}
@@ -342,7 +356,7 @@ func ParseHopPlaintext(raw []byte, maxInnerEnvelope uint32) (HopPlaintext, error
 	value.PreviousHopLocator = netip.AddrFrom16(locatorBytes)
 	if !value.PreviousHopLocator.Is6() || value.PreviousHopLocator.Is4In6() ||
 		value.PreviousHopLocator.IsUnspecified() || value.PreviousHopLocator.IsMulticast() ||
-		value.PreviousHopLocator.IsLoopback() {
+		value.PreviousHopLocator.IsLoopback() || value.PreviousHopLocator != LogicalLocatorForIdentity(value.PreviousHopIdentity) {
 		return HopPlaintext{}, ErrV2HopPlaintext
 	}
 	offset += 16
