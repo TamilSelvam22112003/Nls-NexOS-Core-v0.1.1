@@ -1,0 +1,20 @@
+{
+  "vector_id": "destination-envelope-aes256gcm-001",
+  "warning": "SYNTHETIC TEST MATERIAL ONLY; never use this key in production",
+  "profile": "NLS v2 destination envelope; fixed 72-byte header; session key after destination handshake",
+  "key_hex": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+  "nonce_hex": "000000000000000000000000",
+  "header_aad_hex": "4e3244450100004811111111111111111111111111111111000000000000000000000000824c89aa8efb95ef93629b4519599129cace4adac9a6180daba31ceed41ecee600000038",
+  "ciphertext_and_tag_hex": "3a3430789468e9ebf88a954b3ffd62462f82009e9616b1509ba5d045ee301246c333b9821c9f04437ca9b2b95566ae9e054f1fb97cc35589",
+  "plaintext_ipv6_packet_hex": "6000000000003b4020010db800000000000000000000000120010db8000000000000000000000002",
+  "complete_envelope_hex": "4e3244450100004811111111111111111111111111111111000000000000000000000000824c89aa8efb95ef93629b4519599129cace4adac9a6180daba31ceed41ecee6000000383a3430789468e9ebf88a954b3ffd62462f82009e9616b1509ba5d045ee301246c333b9821c9f04437ca9b2b95566ae9e054f1fb97cc35589",
+  "expected_header_length": 72,
+  "expected_ciphertext_length": 56,
+  "expected_total_length": 128,
+  "expected": "accept",
+  "negative_cases": [
+    {"mutation": "flip final ciphertext/tag bit", "expected": "reject_authentication"},
+    {"mutation": "alter recipient fingerprint in AAD without resealing", "expected": "reject_authentication"},
+    {"mutation": "append a byte to complete envelope", "expected": "reject_exact_length"}
+  ]
+}
