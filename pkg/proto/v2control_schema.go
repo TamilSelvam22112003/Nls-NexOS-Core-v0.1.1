@@ -8,30 +8,11 @@ import (
 )
 
 const (
-	v2TLVInitiatorRouterID uint16 = 0x8001
-	v2TLVResponderRouterID uint16 = 0x8002
-	v2TLVNonceI uint16 = 0x8003
-	v2TLVEphemeralI uint16 = 0x8004
-	v2TLVSuiteList uint16 = 0x8005
-	v2TLVCookie uint16 = 0x8006
-
-	v2TLVCertificateChain uint16 = 0x8001
-	v2TLVStatusEvidence uint16 = 0x8002
-	v2TLVNonceR uint16 = 0x8003
-	v2TLVEphemeralR uint16 = 0x8004
-	v2TLVSelectedSuite uint16 = 0x8005
-	v2TLVEndpointBinding uint16 = 0x8006
-	v2TLVSignature uint16 = 0x8007
-
-	v2TLVTranscriptHash uint16 = 0x8001
-	v2TLVSessionToken uint16 = 0x8002
-	v2TLVSessionLifetime uint16 = 0x8003
-	v2TLVStatusGeneration uint16 = 0x8004
-	v2TLVCloseReason uint16 = 0x8001
+	v2TLVCloseReason                     uint16 = 0x8001
 	v2ControlSuiteX25519Ed25519AES256GCM uint16 = 0x0001
-	v2ControlMaxCertificates = 8
-	v2ControlMaxCertificateChainBytes = 16 * 1024
-	v2ControlStatusObjectBytes = 304
+	v2ControlMaxCertificates                    = 8
+	v2ControlMaxCertificateChainBytes           = 16 * 1024
+	v2ControlStatusObjectBytes                  = 304
 )
 
 var ErrV2ControlSchema = errors.New("invalid NLS v2 control message schema")
