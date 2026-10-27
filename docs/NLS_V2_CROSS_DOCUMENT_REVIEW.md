@@ -26,6 +26,11 @@ The 72-byte N2DE envelope and its AES-256-GCM AAD/nonce/replay rules are defined
 
 **Disposition:** the byte-level candidate is no longer structurally open, but X.509 path/issuance integration, sidecar registry mapping, control capability negotiation, revocation delivery, and real-CA integration tests remain required before implementation can be accepted.
 
+### F-08 — Destination D_INIT signature input was ambiguous (high; corrected in this branch)
+The earlier wording appended message_type 0x11 separately even though the canonical control record already begins with that message type. That could cause independent implementations to sign different byte strings.
+
+**Resolution:** D_INIT signs exactly `ASCII("NLS2-E2E-HS-SIG") || 0x00 || canonical_D_INIT_without_signature_TLV`; the 4-byte canonical control prefix includes message_type once. D_RESP signs the length-prefixed exact D_INIT record followed by the length-prefixed canonical D_RESP record without its signature TLV. The deterministic destination-handshake fixture pins both rules; CI verification is pending.
+
 ### F-05 — Key-update/restart lifecycle is incomplete (blocking for long-lived sessions)
 KEY_UPDATE is reserved. Re-establishment is required before sequence exhaustion or any restart that could repeat a nonce, but no persistent sequence/key-state algorithm or operational restart invariant is specified.
 
