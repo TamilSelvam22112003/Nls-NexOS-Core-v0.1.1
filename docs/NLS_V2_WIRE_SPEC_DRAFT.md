@@ -1,6 +1,6 @@
 # NLS v2 Wire Specification — Draft for Review
 
-**Status:** Proposed; not frozen; not an implementation contract yet  
+**Status:** Proposed; not frozen. Standalone Go v2 status/framing/AEAD/hop-codec primitives and tests exist in `pkg/proto`; running services and packet I/O are not yet integrated  
 **Protocol version:** 2  
 **Scope:** Router-to-router NLS data-plane envelope and shared framing header  
 **Related:** [Handshake and control-message draft](NLS_V2_HANDSHAKE_CONTROL_DRAFT.md), [destination endpoint handshake](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md), [Router-CA status profile](ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md), [destination-protection profile](NLS_V2_DESTINATION_PROTECTION_PROFILE.md)  
@@ -17,7 +17,7 @@ The IPv6 source and destination fields are **not encrypted in place**. Ordinary 
 - Outer IPv6 destination: next NLS relay's routable WAN address.
 - UDP ports: configured NLS transport ports.
 - Clear NLS framing: only fields needed for versioning, session demultiplexing, nonce construction, bounded parsing, and replay handling.
-- Encrypted hop envelope: protected previous-hop locator/identity metadata plus the destination-protected inner packet.
+- Encrypted hop envelope: protected previous-hop logical locator/identity metadata plus the destination-protected inner packet. The logical locator is distinct from the routable outer IPv6 source address.
 - Inner packet: client/server addresses, transport metadata, and payload remain protected from transit relays by a separate destination-scoped protection layer, if end-to-end protection is enabled.
 
 The next relay authenticates and decrypts only the hop envelope addressed to it. It validates the adjacent peer and session, then creates a new hop envelope under the next hop's independent directional key. It MUST NOT decrypt or rewrite destination-protected inner content.
@@ -49,7 +49,7 @@ For AES-256-GCM, construct the 96-bit nonce as:
 
 `nonce = uint32_be(key_epoch) || uint64_be(sequence_number)`
 
-This is safe only if each directional AEAD key is unique to one sender direction and the pair (key_epoch, sequence_number) is never reused under that key. A sender MUST persist or safely rotate key material before sequence wrap or process restart could repeat a nonce. Sequence numbers MUST NOT wrap. The handshake/control draft currently reserves KEY_UPDATE and requires session re-establishment before epoch/sequence exhaustion or a restart that could repeat a nonce. Long-lived sessions are blocked until authenticated key update and crash-safe sequence handling are specified.
+This is safe only if each directional AEAD key is unique to one sender direction and the pair (key_epoch, sequence_number) is never reused under that key. A sender MUST NOT resume a v2 session after process restart. Restart invalidates directional keys, ephemeral private keys, sequence counters and replay windows, and requires a fresh full handshake. Within a process, sequence allocation MUST be atomic and sequence numbers MUST NOT wrap or repeat under the same directional key. KEY_UPDATE remains unsupported; a sender MUST re-establish before sequence, byte or lifetime caps are reached.
 
 The receiver maintains a bounded sliding replay window per session and direction. It MUST authenticate the AEAD tag before committing a packet as accepted. Duplicate, too-old, malformed, or unauthenticated packets are dropped. A receiver MUST NOT advance replay state based only on unauthenticated header fields.
 
@@ -68,7 +68,7 @@ Each adjacent router pair establishes **independent directional keys** after mut
 
 The authenticated handshake transcript MUST bind protocol version, both router identities, both advertised WAN endpoints, both ephemeral public keys, the handshake nonces, and the negotiated algorithm suite. The handshake_id identifies the pending exchange; the responder-generated session_token is bound to the derived session by the authenticated FINISH_R payload and becomes active only after the initiator validates FINISH_R. Directional keys MUST differ. Public-key possession alone does not establish that an IP address belongs to that router; the Router-CA certificate and signed endpoint binding must be validated.
 
-RSA key pairs are not required by this draft. Do not create two RSA pairs without a defined interoperable role. Certificate encoding/profile, handshake message bytes, KDF context labels, transcript hashing, cookie format, and key-update format remain open prerequisites and are intentionally not invented here.
+RSA key pairs are not required by this draft. Do not create two RSA pairs without a defined interoperable role. Candidate certificate/status and handshake encodings, KDF labels, transcript hashing, and cookie construction are drafted and have selected synthetic vectors, but remain subject to cross-implementation conformance and independent review. Authenticated key update is still unsupported.
 
 ## 4. Encrypted hop plaintext
 
@@ -77,16 +77,20 @@ After AEAD decryption, DATA plaintext contains the following canonical structure
 | Order | Field | Encoding / rule |
 |---:|---|---|
 | 1 | inner_kind | 1 byte: `0x01` destination-protected IP packet; other values rejected |
-| 2 | previous_hop_identity_length | uint16; 1–1024 bytes |
-| 3 | previous_hop_identity | Exact certificate identity reference or canonical router identifier; certificate itself is not repeated here |
+| 2 | previous_hop_identity_length | uint16; MUST equal 32 |
+| 3 | previous_hop_identity | 32-byte SHA-256 fingerprint of the router's DER Ed25519 SubjectPublicKeyInfo; certificate itself is not repeated here |
 | 4 | previous_hop_locator_length | uint16; exactly 16 bytes for IPv6 |
-| 5 | previous_hop_locator | IPv6 address of the transmitting NLS relay, checked against authenticated peer policy |
+| 5 | previous_hop_locator | 16-byte NLS logical locator derived from the identity fingerprint as specified below; not the routable outer IPv6 source address |
 | 6 | inner_envelope_length | uint32; exact byte length of the following inner envelope |
 | 7 | inner_envelope | Destination-protected inner packet/envelope; opaque to transit relays |
 
 The inner envelope MUST protect the original client/source address, destination/server address, transport metadata that is not required by the transit path, and application payload according to [NLS_V2_DESTINATION_PROTECTION_PROFILE.md](NLS_V2_DESTINATION_PROTECTION_PROFILE.md). The endpoint key-establishment flow is proposed in [NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md](NLS_V2_DESTINATION_HANDSHAKE_DRAFT.md). Transit relays MUST NOT receive destination private keys. Both documents remain proposals and must be reviewed and backed by shared byte-exact vectors before implementation.
 
-The receiver MUST check every length with overflow-safe arithmetic, reject truncated or trailing bytes, validate that the previous-hop identity/locator match the authenticated adjacent session, and drop failures without forwarding.
+The receiver MUST check every length with overflow-safe arithmetic, reject truncated or trailing bytes, validate the identity fingerprint against the authenticated adjacent session, and verify that the locator equals `LogicalLocatorForIdentity(previous_hop_identity)`. The outer IPv6 source address is separately validated against the peer's active Router-CA authorized WAN endpoint. Drop failures without forwarding.
+
+### 4.1 Canonical logical locator derivation
+
+Let `identity_fingerprint` be the 32-byte SHA-256 fingerprint of the router's DER SubjectPublicKeyInfo. Compute `digest = SHA256(ASCII("NLS2-ROUTER-LOCATOR") || 0x00 || identity_fingerprint)`. The 16-byte logical locator is `0xfd || digest[0:15]`, interpreted as an RFC 4193 ULA-format IPv6 value. The locator is stable for one identity and changes when the identity key changes. It is used only inside NLS's encrypted hop plaintext; it MUST NOT be copied into the outer IPv6 header or treated as an underlay next-hop address. Trust registries MUST reject any locator collision rather than trusting the truncated value alone.
 
 ## 5. Relay forwarding procedure
 
@@ -119,7 +123,7 @@ Native routing-protocol integration is a later, separate workstream requiring pr
 ## 8. Table separation
 
 - **VIP/pending table:** temporary opaque token, creation/expiry time, handshake state, bounded peer hints, and rate-limit/accounting data. Never treat a token as an IP address or as authenticated identity.
-- **Trust table:** validated router identity, certificate fingerprint, authenticated endpoint bindings, status/revocation generation, policy, and permitted capabilities. Session keys should live in a protected session/key store, not in a general-purpose printable table.
+- **Trust table:** validated router identity, certificate fingerprint, authenticated endpoint bindings, deterministic NLS logical locator, status/revocation generation, policy, and permitted capabilities. A logical-locator collision MUST fail closed. Session keys should live in a protected session/key store, not in a general-purpose printable table.
 - **Session/replay state:** session token, peer identity, directional key references, epoch, inbound replay window, outbound sequence counter, expiry, and lifecycle state.
 - **LSDB:** remains the routing protocol's link-state database. Cryptographic trust is a separate predicate; LSDB presence alone MUST NOT create trust.
 
@@ -144,8 +148,8 @@ The 44-byte NLS header, UDP header, outer IPv6 header, AEAD tag, hop plaintext f
 ## 12. Explicit unresolved blockers
 
 - Handshake/control packet formats and state machines are drafted; shared conformance vectors and independent review remain required.
-- Router-CA status evidence and endpoint authorization are specified as a fixed 304-byte candidate in `ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md`; certificate profile and implementation mapping still require review.
-- Stateless cookie construction and anti-amplification limits.
+- Router-CA status evidence and endpoint authorization are specified as a fixed 304-byte candidate in `ROUTER_CA_STATUS_EVIDENCE_PROFILE_V2.md`; real-CA issuance, registry mapping and revocation delivery remain implementation gates.
+- Stateless cookie construction is drafted and has a synthetic MAC vector; production secret rotation, time-bucket acceptance and handshake-level anti-amplification tests remain open.
 - Destination-protection envelope and endpoint handshake are drafted separately; their interoperability vectors, key lifecycle and review remain release gates.
 - Authenticated key update and restart-safe nonce/sequence persistence strategy.
 - Shared golden vectors, parser/property/fuzz coverage, and cross-implementation error/size-limit conformance.
